@@ -1,0 +1,8 @@
+id: creative
+label: Creative
+prompt_fragment: prompts/modes/creative.md
+scope:
+  read: ['**']
+  write: ['sessions/**']
+tools: [footnote, session_end]
+session_template: templates/creative-session.md

@@ -1,0 +1,8 @@
+id: review
+label: Review
+prompt_fragment: prompts/modes/review.md
+scope:
+  read: ['**']
+  write: ['sessions/**']
+tools: [footnote, session_end]
+session_template: templates/review-session.md

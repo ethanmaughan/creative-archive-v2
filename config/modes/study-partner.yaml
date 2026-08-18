@@ -1,0 +1,8 @@
+id: study-partner
+label: Study partner
+prompt_fragment: prompts/modes/study-partner.md
+scope:
+  read: ['**']
+  write: ['sessions/**']
+tools: [footnote, session_end]
+session_template: templates/study-partner-session.md
