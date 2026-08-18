@@ -1,0 +1,5 @@
+node_modules/
+*.tsbuildinfo
+
+# Local scratch archives used by hand while developing. Test archives live in tmp.
+/scratch/
