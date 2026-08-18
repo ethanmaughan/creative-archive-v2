@@ -8,6 +8,28 @@ export interface Scope {
 }
 
 /**
+ * Standalone scope checks, so a caller holding the unscoped store can still prove a path is
+ * in scope before acting on it. Intake needs exactly this: the scratch buffer lives outside
+ * every mode's scope, so flushing it into the session folder is a rename whose *target* must
+ * be checked even though its source cannot be.
+ */
+export function assertScopeRead(scope: Scope, modeId: string, path: string): string {
+  const normalized = normalizeArchivePath(path);
+  if (!matchesAnyGlob(scope.read, normalized)) {
+    throw new ScopeViolation('read', normalized, modeId);
+  }
+  return normalized;
+}
+
+export function assertScopeWrite(scope: Scope, modeId: string, path: string): string {
+  const normalized = normalizeArchivePath(path);
+  if (!matchesAnyGlob(scope.write, normalized)) {
+    throw new ScopeViolation('write', normalized, modeId);
+  }
+  return normalized;
+}
+
+/**
  * Mode scope enforcement (§3), applied at the storage layer rather than in each tool.
  *
  * One chokepoint is the whole point: a tool that forgets to check scope is a bug you find
@@ -32,19 +54,11 @@ export class ScopedFileStore implements FileStore {
   }
 
   #checkRead(path: string): string {
-    const normalized = normalizeArchivePath(path);
-    if (!matchesAnyGlob(this.scope.read, normalized)) {
-      throw new ScopeViolation('read', normalized, this.modeId);
-    }
-    return normalized;
+    return assertScopeRead(this.scope, this.modeId, path);
   }
 
   #checkWrite(path: string): string {
-    const normalized = normalizeArchivePath(path);
-    if (!matchesAnyGlob(this.scope.write, normalized)) {
-      throw new ScopeViolation('write', normalized, this.modeId);
-    }
-    return normalized;
+    return assertScopeWrite(this.scope, this.modeId, path);
   }
 
   resolve(path: string): string {

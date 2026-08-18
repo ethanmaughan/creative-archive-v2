@@ -127,6 +127,19 @@ export async function loadModeFile(path: string): Promise<Mode> {
   };
 }
 
+/**
+ * §3: mode controls scope, tools, and output shape. A tool the manifest does not list is
+ * not available in that mode, whoever is asking for it.
+ */
+export function assertToolAllowed(mode: Mode, tool: string): void {
+  if (!mode.tools.includes(tool)) {
+    throw new CoreError(
+      'tool_not_in_mode',
+      `mode '${mode.id}' does not grant the '${tool}' tool (§3)`,
+    );
+  }
+}
+
 export async function listModes(root: string = configRoot()): Promise<Mode[]> {
   const dir = join(root, 'modes');
   const entries = (await readdir(dir)).filter((name) => name.endsWith('.yaml')).sort();
