@@ -42,11 +42,16 @@ describe('invariant: append-only transcript survives a killed process', () => {
     const pointer = await readOpenSession(archive.store);
     expect(pointer, 'the dying process had committed a session').not.toBeNull();
 
-    const raw = await archive.store.read(`${sessionDir(pointer!.session_id)}/${TRANSCRIPT_FILE}`);
+    const raw = await archive.store.read(
+      `${sessionDir(pointer!.session_id)}/${TRANSCRIPT_FILE}`,
+    );
     const entries = parseTranscript(raw);
 
     for (const utterance of said) {
-      expect(entries.some((entry) => entry.text === utterance), utterance).toBe(true);
+      expect(
+        entries.some((entry) => entry.text === utterance),
+        utterance,
+      ).toBe(true);
     }
     // Both sides survived, not just the human's half.
     expect(entries.filter((entry) => entry.role === 'agent').length).toBe(said.length + 1);

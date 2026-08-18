@@ -71,7 +71,12 @@ export class Session {
   #endToken: string | null = null;
   #endReason: EndReason | null = null;
 
-  private constructor(deps: SessionDeps, scratchId: string, log: AppendHandle, startedAt: string) {
+  private constructor(
+    deps: SessionDeps,
+    scratchId: string,
+    log: AppendHandle,
+    startedAt: string,
+  ) {
     this.#deps = deps;
     this.#scratchId = scratchId;
     this.#log = log;

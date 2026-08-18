@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ScopeViolation } from '../../src/core/errors.ts';
 import { DEFAULT_IDENTITY } from '../../src/core/identity/identity.ts';
 import { ScriptedModelClient } from '../../src/core/model/scripted-model.ts';
-import { assertToolAllowed, listModes, loadMode, type Mode } from '../../src/core/modes/mode.ts';
+import {
+  assertToolAllowed,
+  listModes,
+  loadMode,
+  type Mode,
+} from '../../src/core/modes/mode.ts';
 import { Session } from '../../src/core/session/session.ts';
 import { ScopedFileStore } from '../../src/core/storage/scoped-file-store.ts';
 import { makeSandbox, type Sandbox } from '../helpers/sandbox.ts';
@@ -70,7 +75,11 @@ describe('invariant: mode scope prevents out-of-scope writes', () => {
     // A mode whose scope excludes the session folder cannot hold a session at all. The
     // failure lands at commit, before the buffer is moved, so nothing is half-written.
     const archive = await sandbox.open();
-    const walled: Mode = { ...tutor, id: 'walled', scope: { read: ['**'], write: ['notes/**'] } };
+    const walled: Mode = {
+      ...tutor,
+      id: 'walled',
+      scope: { read: ['**'], write: ['notes/**'] },
+    };
 
     const session = await Session.begin({
       archive,
@@ -83,7 +92,9 @@ describe('invariant: mode scope prevents out-of-scope writes', () => {
     await expect(session.say('this should not commit')).rejects.toThrow(ScopeViolation);
     expect(await archive.store.exists('sessions')).toBe(false);
     expect(session.state).toBe('buffering');
-    expect(await archive.store.read(session.transcriptPath)).toContain('this should not commit');
+    expect(await archive.store.read(session.transcriptPath)).toContain(
+      'this should not commit',
+    );
   });
 
   it('refuses a tool the mode does not grant (§3)', async () => {

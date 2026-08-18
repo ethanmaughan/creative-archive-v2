@@ -117,7 +117,9 @@ describe('identity persistence (D-003, per archive)', () => {
     const archive = await openArchive(archiveRoot, env);
     await saveIdentity(archive.store, { name: 'Alena', personality: 'dry' });
     expect(await loadIdentity(archive.store)).toEqual({ name: 'Alena', personality: 'dry' });
-    expect(await archive.store.read('.creative-archive/identity.yaml')).toContain('name: Alena');
+    expect(await archive.store.read('.creative-archive/identity.yaml')).toContain(
+      'name: Alena',
+    );
   });
 
   it('keeps identity independent per archive', async () => {
@@ -140,7 +142,10 @@ describe('identity persistence (D-003, per archive)', () => {
 
   it('rejects an unknown personality in a hand-edited identity file', async () => {
     const archive = await openArchive(archiveRoot, env);
-    await archive.store.write('.creative-archive/identity.yaml', 'name: X\npersonality: sassy\n');
+    await archive.store.write(
+      '.creative-archive/identity.yaml',
+      'name: X\npersonality: sassy\n',
+    );
     await expect(loadIdentity(archive.store)).rejects.toThrow(/personality/);
   });
 });

@@ -15,7 +15,10 @@ export interface Personality {
   readonly promptFragmentPath: string;
 }
 
-const PRESETS: Record<PersonalityId, { register: string; verbosity: Personality['verbosity'] }> = {
+const PRESETS: Record<
+  PersonalityId,
+  { register: string; verbosity: Personality['verbosity'] }
+> = {
   plain: { register: 'neutral', verbosity: 'terse' },
   warm: { register: 'encouraging', verbosity: 'moderate' },
   dry: { register: 'wry, understated', verbosity: 'terse' },
@@ -39,7 +42,10 @@ export function loadPersonality(id: string, root: string = configRoot()): Person
 
   const promptFragmentPath = join(root, 'prompts', 'personalities', `${id}.md`);
   if (!existsSync(promptFragmentPath)) {
-    throw new ConfigInvalid(promptFragmentPath, `missing prompt fragment for personality '${id}'`);
+    throw new ConfigInvalid(
+      promptFragmentPath,
+      `missing prompt fragment for personality '${id}'`,
+    );
   }
 
   const preset = PRESETS[id];

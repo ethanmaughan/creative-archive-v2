@@ -52,7 +52,9 @@ describe('invariant: a killed session recovers on next launch', () => {
     expect(meta.ended_at).not.toBeNull();
 
     // Ground truth is untouched: recovery writes metadata, never the transcript.
-    expect(await archive.store.read(`${sessionDir(sessionId)}/${TRANSCRIPT_FILE}`)).toBe(before);
+    expect(await archive.store.read(`${sessionDir(sessionId)}/${TRANSCRIPT_FILE}`)).toBe(
+      before,
+    );
     expect(await readOpenSession(archive.store)).toBeNull();
   });
 

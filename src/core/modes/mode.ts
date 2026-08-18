@@ -91,7 +91,10 @@ export async function loadModeFile(path: string): Promise<Mode> {
   for (const tool of manifest.tools) {
     const deferredTo = DEFERRED_TOOLS[tool];
     if (deferredTo !== undefined) {
-      throw new ConfigInvalid(path, `tool '${tool}' is not implemented yet — it arrives with ${deferredTo}`);
+      throw new ConfigInvalid(
+        path,
+        `tool '${tool}' is not implemented yet — it arrives with ${deferredTo}`,
+      );
     }
     if (!(IMPLEMENTED_TOOLS as readonly string[]).includes(tool)) {
       throw new ConfigInvalid(
@@ -103,7 +106,10 @@ export async function loadModeFile(path: string): Promise<Mode> {
 
   const promptFragmentPath = join(root, manifest.prompt_fragment);
   if (!existsSync(promptFragmentPath)) {
-    throw new ConfigInvalid(path, `prompt_fragment '${manifest.prompt_fragment}' does not exist`);
+    throw new ConfigInvalid(
+      path,
+      `prompt_fragment '${manifest.prompt_fragment}' does not exist`,
+    );
   }
 
   let sessionTemplatePath: string | null = null;
@@ -148,7 +154,10 @@ export async function listModes(root: string = configRoot()): Promise<Mode[]> {
   for (const mode of modes) {
     const expected = `${mode.id}.yaml`;
     if (!entries.includes(expected)) {
-      throw new ConfigInvalid(join(dir, expected), `mode id '${mode.id}' must match its filename`);
+      throw new ConfigInvalid(
+        join(dir, expected),
+        `mode id '${mode.id}' must match its filename`,
+      );
     }
   }
 

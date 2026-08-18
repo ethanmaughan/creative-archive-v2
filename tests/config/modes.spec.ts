@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigInvalid, CoreError } from '../../src/core/errors.ts';
-import { IMPLEMENTED_TOOLS, listModes, loadMode, loadModeFile } from '../../src/core/modes/mode.ts';
+import {
+  IMPLEMENTED_TOOLS,
+  listModes,
+  loadMode,
+  loadModeFile,
+} from '../../src/core/modes/mode.ts';
 
 describe('shipped mode manifests', () => {
   it('loads the initial set from §3', async () => {
@@ -124,9 +129,12 @@ describe('mode manifest validation', () => {
 
   it('requires a scope', async () => {
     const path = writeManifest(
-      ['id: probe', 'label: Probe', 'prompt_fragment: prompts/modes/tutor.md', 'tools: [footnote]'].join(
-        '\n',
-      ),
+      [
+        'id: probe',
+        'label: Probe',
+        'prompt_fragment: prompts/modes/tutor.md',
+        'tools: [footnote]',
+      ].join('\n'),
     );
     await expect(loadModeFile(path)).rejects.toThrow(ConfigInvalid);
   });

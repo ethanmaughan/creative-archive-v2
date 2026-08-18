@@ -19,12 +19,13 @@ if (archiveRoot === undefined) {
 }
 
 const archive = await openArchive(archiveRoot, process.env);
+const preselected = process.env.CRASH_BEFORE_COMMIT === '1' ? null : await loadMode('tutor');
 const session = await Session.begin({
   archive,
   identity: DEFAULT_IDENTITY,
   model: new ScriptedModelClient({ replies: ['Go on.'] }),
   modes: await listModes(),
-  mode: process.env.CRASH_BEFORE_COMMIT === '1' ? undefined : await loadMode('tutor'),
+  ...(preselected !== null ? { mode: preselected } : {}),
 });
 
 for (const utterance of utterances) {

@@ -14,7 +14,15 @@ describe('normalizeArchivePath', () => {
   });
 
   it('rejects anything that could leave the archive', () => {
-    for (const bad of ['/etc/passwd', '../outside.md', 'a/../../b.md', '', '.', 'C:/x', 'a\\b']) {
+    for (const bad of [
+      '/etc/passwd',
+      '../outside.md',
+      'a/../../b.md',
+      '',
+      '.',
+      'C:/x',
+      'a\\b',
+    ]) {
       expect(() => normalizeArchivePath(bad), bad).toThrow(PathEscape);
     }
   });
