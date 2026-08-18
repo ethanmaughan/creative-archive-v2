@@ -10,6 +10,11 @@ there is no microphone.
 Build order §9 **step 1 only**: core plus the text adapter. Retrieval, derivation, ingest,
 voice, and the executor are not here and are not stubbed.
 
+The design document is [`docs/spec.md`](docs/spec.md). Every `§` reference in this repo —
+in the code, the tests, and the commit messages — points into it, and
+[`docs/decisions.md`](docs/decisions.md) records where the implementation settled something
+the spec left open or deliberately departed from it.
+
 ## Running it
 
 Requires node 24.18 (`mise install`) and pnpm 11. There is no build step — node runs the
@@ -100,7 +105,7 @@ pnpm verify    # typecheck, lint, test
 
 ## Reading order
 
-`docs/decisions.md` first — it records what was settled during the build, what deviates
+`docs/spec.md` for the design, then `docs/decisions.md` — it records what was settled during the build, what deviates
 from the spec and why, and what is still open. `src/core/session/session.ts` is the centre
 of the system; the comment above `commit()` explains why the buffer is renamed rather than
 rewritten, which is the single most load-bearing decision in the file.

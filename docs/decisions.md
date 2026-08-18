@@ -1,8 +1,8 @@
 # Decision log
 
-Decisions resolved while building. The spec (`creative-archive-v2-spec.md`) is the design
-document; this file records where the code settled something the spec left open, and where
-it deliberately differs. A deviation is a decision, and decisions get written down.
+Decisions resolved while building. [`spec.md`](spec.md) is the design document; this file
+records where the code settled something the spec left open, and where it deliberately
+differs. A deviation is a decision, and decisions get written down.
 
 Format: **D-nnn — title** · what was decided · why · what it would cost to change.
 
