@@ -1,0 +1,5 @@
+node_modules/
+
+# The architecture spec is an external document reproduced verbatim. Reformatting it would
+# create diff noise against the original and make it harder to tell an edit from a rewrap.
+docs/spec.md

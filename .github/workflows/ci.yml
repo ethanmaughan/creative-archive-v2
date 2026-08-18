@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a branch).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: format · typecheck · lint · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Install the pnpm pinned in package.json's "packageManager" field, before
+      # setup-node — so setup-node can resolve it (and cache its store).
+      - uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          # Pinned to the exact version in mise.toml rather than floating on 24.x. There is
+          # no build step here — node runs the TypeScript by stripping types — so the
+          # runtime version is part of the toolchain, not just the test environment.
+          node-version: '24.18.0'
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Formatting
+        run: pnpm format:check
+
+      # tsc (typecheck only, nothing is emitted) · eslint · vitest.
+      # Includes the invariant suite, which spawns a real process and SIGKILLs it
+      # mid-session, and drives the daemon over a real Unix socket.
+      - name: Typecheck, lint, tests
+        run: pnpm verify
