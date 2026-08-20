@@ -362,7 +362,9 @@ export class Session {
   /** §5.1: abort before commit discards the buffer. After commit there is nothing to abort. */
   async abort(): Promise<void> {
     if (this.#state !== 'buffering') {
-      throw new SessionStateError(`cannot abort a session that is ${this.#state} — a committed session ends with a confirm, not an abort (§5.1)`);
+      throw new SessionStateError(
+        `cannot abort a session that is ${this.#state} — a committed session ends with a confirm, not an abort (§5.1)`,
+      );
     }
     this.#log.close();
     const store = this.#deps.archive.store;
