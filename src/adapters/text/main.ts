@@ -59,7 +59,7 @@ const begun = await call<{ greeting: string }>({
 if (begun !== null) console.log(`\n${begun.greeting}`);
 
 console.log(
-  '\n(/search <query>, /footnote <text>, /end, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
+  '\n(/search <query>, /footnote <text>, /end, /derive, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
 );
 
 // Open stdin only now that attach and begin have finished. readline starts consuming its
@@ -139,6 +139,34 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       return false;
     }
 
+    case 'derive': {
+      const report = await call<DerivationReport>({
+        type: 'session.derive',
+        ...(argument.length > 0 ? { sessionId: argument } : {}),
+      });
+      if (report === null) return false;
+
+      if (report.outcome !== 'derived') {
+        console.log(`  ${report.outcome} — nothing written`);
+        return false;
+      }
+      console.log(`  minutes for ${report.sessionId} (${report.model})`);
+      console.log(`  ${report.wrote.join(', ')}`);
+      console.log(
+        `  ${report.highlights} highlight(s), ${report.openThreads} open thread(s)` +
+          `${report.tags.length > 0 ? `, tags [${report.tags.join(', ')}]` : ''}`,
+      );
+      if (report.droppedReferences > 0) {
+        console.log(
+          `  ${report.droppedReferences} citation(s) pointed at turns that do not exist`,
+        );
+      }
+      if (report.unresolvedPlaceholders.length > 0) {
+        console.log(`  template asked for: ${report.unresolvedPlaceholders.join(', ')}`);
+      }
+      return false;
+    }
+
     case 'index':
       return printResult(await call({ type: 'index.status' }));
 
@@ -212,6 +240,18 @@ function printResult(result: unknown): boolean {
   if (result !== null)
     console.log(`  ${JSON.stringify(result, null, 2).replaceAll('\n', '\n  ')}`);
   return false;
+}
+
+interface DerivationReport {
+  sessionId: string;
+  outcome: string;
+  wrote: string[];
+  tags: string[];
+  highlights: number;
+  openThreads: number;
+  droppedReferences: number;
+  unresolvedPlaceholders: string[];
+  model: string;
 }
 
 interface SearchResult {

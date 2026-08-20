@@ -2,6 +2,7 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { openArchive, type Archive } from '../archive/archive.ts';
+import { deriveSession } from '../derive/derive.ts';
 import { socketPath } from '../config/paths.ts';
 import { CoreError, SessionStateError } from '../errors.ts';
 import { loadIdentity, saveIdentity, type Identity } from '../identity/identity.ts';
@@ -9,6 +10,7 @@ import type { ModelClient } from '../model/model-client.ts';
 import { resolveModelClient } from '../model/resolve.ts';
 import { listModes, loadMode, type Mode } from '../modes/mode.ts';
 import { IndexRegistry } from '../retrieval/registry.ts';
+import { readMeta } from '../session/meta.ts';
 import { recoverArchive } from '../session/recovery.ts';
 import { GREETING, Session } from '../session/session.ts';
 import {
@@ -32,6 +34,8 @@ interface Connection {
   identity: Identity | null;
   mode: Mode | null;
   session: Session | null;
+  /** The session this connection last closed, so `derive` needs no argument after an end. */
+  lastClosed: string | null;
   idleTimer: NodeJS.Timeout | null;
 }
 
@@ -118,6 +122,7 @@ export class DaemonServer {
       identity: null,
       mode: null,
       session: null,
+      lastClosed: null,
       idleTimer: null,
     };
     this.#connections.add(connection);
@@ -277,6 +282,41 @@ export class DaemonServer {
         return session.search(request.query);
       }
 
+      case 'session.derive': {
+        const archive = this.#requireArchive(connection);
+        const sessionId = request.sessionId ?? connection.lastClosed;
+        if (sessionId === null) {
+          throw new SessionStateError(
+            'nothing to derive — end a session first, or name one with sessionId',
+          );
+        }
+        if (connection.session !== null && connection.session.id === sessionId) {
+          // §5.4 runs over a *committed* transcript. Deriving a session still being written
+          // would describe a conversation that has not finished happening.
+          throw new SessionStateError(`session ${sessionId} is still open`);
+        }
+
+        const meta = await readMeta(archive.store, sessionId);
+        const modeId = request.mode ?? meta.mode;
+        if (modeId === null) {
+          throw new SessionStateError(
+            `session ${sessionId} has no mode — it was recovered before intake resolved one ` +
+              `(D-009), so name a mode to derive it with`,
+          );
+        }
+
+        const report = await deriveSession({
+          archive,
+          sessionId,
+          mode: await loadMode(modeId),
+          model: this.#model,
+        });
+
+        // Derivation rewrites the session's title and tags, both of which are indexed.
+        if (report.outcome === 'derived') this.#indexes.markStale(archive.root);
+        return report;
+      }
+
       case 'index.status': {
         const archive = this.#requireArchive(connection);
         const index = this.#indexes.peek(archive.root);
@@ -302,6 +342,7 @@ export class DaemonServer {
         const archive = this.#requireArchive(connection);
         const session = this.#requireSession(connection);
         const meta = await session.confirmEnd(request.token);
+        connection.lastClosed = meta.id;
         // A finished session is archive content (§1): mark the index stale so the next
         // search can find what was just said.
         this.#indexes.markStale(archive.root);

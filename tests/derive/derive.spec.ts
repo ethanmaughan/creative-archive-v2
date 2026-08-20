@@ -226,6 +226,17 @@ describe('the derivation pass (§5.4)', () => {
     expect(written).toContain('Eigenvector sign');
   });
 
+  it("keeps the template's own developer note out of the archive", async () => {
+    await derive();
+    const written = await archive.store.read(`${sessionDir(SESSION_ID)}/${SESSION_FILE}`);
+
+    // The comment at the top of a template is for whoever edits the template, not for the
+    // person reading their minutes.
+    expect(written).not.toContain('<!--');
+    expect(written).not.toContain('§3, "output shape"');
+    expect(written.startsWith('# Eigenvector sign')).toBe(true);
+  });
+
   it('says so in the output when there is nothing to report', async () => {
     await derive({ derived: { summary: '', tags: [] } });
     const written = await archive.store.read(`${sessionDir(SESSION_ID)}/${SESSION_FILE}`);

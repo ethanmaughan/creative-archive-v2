@@ -21,6 +21,21 @@ import { deepLink, headingSlug, type IndexedDocument, type Span } from './docume
 /** Never indexed: core state, version control, and dependency trees. */
 const SKIP_DIRS = new Set([ARCHIVE_INTERNAL_DIR, '.git', 'node_modules']);
 
+/**
+ * A session's derived minutes are not source material, so they are not indexed.
+ *
+ * Left in, `session.md` was indexed as an ordinary note — provenance `note`, title from its
+ * own heading — which made a model-written summary indistinguishable from something the user
+ * wrote by hand, and gave it two spans competing with the transcript turns it was summarizing.
+ * Retrieved and quoted back in a later session, that is §5.5's failure exactly: a
+ * reconstruction that reads like a record.
+ *
+ * Nothing is lost from retrieval: the transcript the summary was derived from is indexed.
+ */
+function isDerivedLayer(path: string): boolean {
+  return path.startsWith('sessions/') && path.endsWith('/session.md');
+}
+
 export interface ScanResult {
   readonly documents: IndexedDocument[];
   readonly filesRead: number;
@@ -54,7 +69,7 @@ export async function scanArchive(store: FileStore): Promise<ScanResult> {
         if (!SKIP_DIRS.has(name)) queue.push(entry.path);
         continue;
       }
-      if (name.endsWith('.md')) markdown.push(entry.path);
+      if (name.endsWith('.md') && !isDerivedLayer(entry.path)) markdown.push(entry.path);
     }
   }
 

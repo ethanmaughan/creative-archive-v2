@@ -31,6 +31,11 @@ export const RequestSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('session.say'), text: z.string() }),
   z.object({ type: z.literal('session.footnote'), text: z.string().min(1) }),
   z.object({ type: z.literal('session.search'), query: z.string().min(1) }),
+  z.object({
+    type: z.literal('session.derive'),
+    sessionId: z.string().min(1).optional(),
+    mode: z.string().min(1).optional(),
+  }),
   z.object({ type: z.literal('index.status') }),
   z.object({ type: z.literal('index.rebuild') }),
   z.object({ type: z.literal('session.end') }),

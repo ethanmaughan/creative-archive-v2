@@ -36,6 +36,14 @@ export interface DerivedContent {
 
 const PLACEHOLDER = /\{\{\s*([a-z_]+)\s*\}\}/g;
 
+/**
+ * A leading HTML comment in a template explains the template to whoever edits it. It is not
+ * part of the document, and copying it into the archive would put a note about how the tool
+ * works into every set of minutes the user ever reads. Comments further down are left alone —
+ * those are the author's.
+ */
+const LEADING_COMMENT = /^\s*<!--[\s\S]*?-->\s*/;
+
 export function renderSessionMarkdown(template: string, content: DerivedContent): string {
   const values: Record<string, string> = {
     title: content.title,
@@ -46,7 +54,9 @@ export function renderSessionMarkdown(template: string, content: DerivedContent)
     open_threads: renderThreads(content.openThreads),
   };
 
-  return template.replace(PLACEHOLDER, (match, name: string) => values[name] ?? match);
+  return template
+    .replace(LEADING_COMMENT, '')
+    .replace(PLACEHOLDER, (match, name: string) => values[name] ?? match);
 }
 
 /** Placeholders a template asked for that this pass does not produce. */
