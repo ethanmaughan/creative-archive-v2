@@ -29,6 +29,11 @@ const MetaSchema = z
     ended_by: z.enum(END_REASONS).nullable(),
     recovered: z.boolean(),
     links: z.array(z.string()),
+    /** Topic tags from the derivation pass (§5.4 frontmatter enrichment). */
+    tags: z.array(z.string()),
+    /** When the derived layer was last produced, and by which model. Null until derived. */
+    derived_at: z.string().min(1).nullable(),
+    derived_by: z.string().min(1).nullable(),
   })
   .strict();
 

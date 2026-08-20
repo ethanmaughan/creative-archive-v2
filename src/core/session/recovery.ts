@@ -64,6 +64,9 @@ export async function recoverArchive(
         ended_by: 'crash',
         recovered: true,
         links: meta?.links ?? [],
+        tags: meta?.tags ?? [],
+        derived_at: meta?.derived_at ?? null,
+        derived_by: meta?.derived_by ?? null,
       });
       crashedSessions.push(pointer.session_id);
     }
@@ -115,6 +118,9 @@ export async function recoverArchive(
         ended_by: 'crash',
         recovered: true,
         links: [],
+        tags: [],
+        derived_at: null,
+        derived_by: null,
       });
 
       promotedBuffers.push(id);

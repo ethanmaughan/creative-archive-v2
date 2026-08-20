@@ -1,9 +1,9 @@
 <!--
 Shape of the derived session.md for this mode (§3, "output shape").
 
-Consumed by the post-session derivation pass (step 3), not by step 1. Step 1 writes only
-transcript.md (ground truth) and meta.yaml (metadata); everything here is derived and
-regenerable.
+Produced by the post-session derivation pass (§5.4). Everything in here is derived and
+regenerable — transcript.md beside it is the ground truth and is never edited (§10.7).
+Links point at turns in that transcript.
 -->
 
 # {{title}}
@@ -11,6 +11,10 @@ regenerable.
 ## Summary
 
 {{summary}}
+
+## Outline
+
+{{outline}}
 
 ## Open threads
 

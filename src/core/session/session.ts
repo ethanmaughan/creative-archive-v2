@@ -405,6 +405,10 @@ export class Session {
       ended_by: ended?.endedBy ?? null,
       recovered: false,
       links: [],
+      // The derived layer does not exist until the derivation pass runs (§5.4).
+      tags: [],
+      derived_at: null,
+      derived_by: null,
     };
   }
 
