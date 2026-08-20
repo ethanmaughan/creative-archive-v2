@@ -52,7 +52,18 @@ export class DaemonServer {
   #idleMs: number;
   #log: (message: string) => void;
   #connections = new Set<Connection>();
-  #liveArchives = new Set<string>();
+  /**
+   * The one session that is currently live, anywhere.
+   *
+   * Not a set keyed by archive: the limit is not that two sessions would collide on one
+   * archive's files, it is that there is one person here. Two conversations at once about
+   * different things is not a thing a human does, on one archive or two.
+   *
+   * It is also what keeps recovery safe. Recovery promotes or deletes whatever it finds in
+   * the scratch directory (D-009), so running it while a session is mid-intake would eat
+   * the buffer being written. Attach consults this before recovering.
+   */
+  #liveSession: { readonly archiveRoot: string; readonly connection: Connection } | null = null;
   #indexes = new IndexRegistry();
   #modes: Mode[] = [];
 
@@ -127,7 +138,7 @@ export class DaemonServer {
       // per dropped client.
       connection.session?.abandon();
       connection.session = null;
-      if (connection.archive !== null) this.#liveArchives.delete(connection.archive.root);
+      this.#forgetLiveSession(connection);
       this.#connections.delete(connection);
     });
 
@@ -218,8 +229,11 @@ export class DaemonServer {
         if (connection.session !== null && isLive(connection.session)) {
           throw new SessionStateError('this connection already has a session open');
         }
-        if (this.#liveArchives.has(archive.root)) {
-          throw new SessionStateError(`another session is already open on ${archive.root}`);
+        if (this.#liveSession !== null) {
+          throw new SessionStateError(
+            `a session is already open on ${this.#liveSession.archiveRoot} — one conversation ` +
+              `at a time, because there is one of you`,
+          );
         }
 
         const modeId = request.mode ?? connection.mode?.id;
@@ -233,7 +247,7 @@ export class DaemonServer {
           index: await this.#indexes.get(archive),
           ...(mode !== undefined ? { mode } : {}),
         });
-        this.#liveArchives.add(archive.root);
+        this.#liveSession = { archiveRoot: archive.root, connection };
         this.#touchIdle(connection);
 
         return {
@@ -336,9 +350,10 @@ export class DaemonServer {
     // §5.3: recovery runs at attach, before any session can open. A scratch buffer
     // belonging to a live session is indistinguishable from an orphaned one, so this is
     // the only safe moment to look.
-    const recovery = this.#liveArchives.has(archive.root)
-      ? { crashedSessions: [], promotedBuffers: [], discardedBuffers: [] }
-      : await recoverArchive(archive, { identity });
+    const recovery =
+      this.#liveSession?.archiveRoot === archive.root
+        ? { crashedSessions: [], promotedBuffers: [], discardedBuffers: [] }
+        : await recoverArchive(archive, { identity });
 
     connection.archive = archive;
     connection.identity = identity;
@@ -361,8 +376,12 @@ export class DaemonServer {
 
   #releaseSession(connection: Connection): void {
     this.#clearIdle(connection);
-    if (connection.archive !== null) this.#liveArchives.delete(connection.archive.root);
+    this.#forgetLiveSession(connection);
     connection.session = null;
+  }
+
+  #forgetLiveSession(connection: Connection): void {
+    if (this.#liveSession?.connection === connection) this.#liveSession = null;
   }
 
   /** §5.3 idle path: prompt to confirm, never close on the timer alone. */
