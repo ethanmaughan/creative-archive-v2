@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ArchiveIndex } from '../../src/core/retrieval/index.ts';
-import { SPAN_CHARS, describeSearch, retrieve } from '../../src/core/retrieval/retrieve.ts';
+import { describeSearch, retrieve } from '../../src/core/retrieval/retrieve.ts';
 import { loadMode, type Mode } from '../../src/core/modes/mode.ts';
 import { MemoryFileStore } from '../../src/core/storage/memory-file-store.ts';
 
@@ -39,11 +39,12 @@ describe('retrieve', () => {
     }
   });
 
-  it('clips a long span and says that it clipped it', () => {
+  it('returns a span whole rather than clipping it mid-sentence', () => {
     const result = retrieve(index, tutor, 'eigenvector');
     const span = result.spans[0]!;
-    expect(span.text.length).toBeLessThanOrEqual(SPAN_CHARS);
-    expect(span.truncated).toBe(true);
+    // The fixture turn is deliberately long; a clip would misquote the source.
+    expect(span.text.length).toBeGreaterThan(900);
+    expect(span.text).toContain('The eigenvector sign flips');
   });
 
   it('applies mode read scope to retrieval, not just to file reads (§3)', async () => {

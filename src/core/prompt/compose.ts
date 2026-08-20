@@ -102,7 +102,6 @@ function retrievedBlock(retrieval: RetrievalResult): string[] {
     lines.push(
       `[${position + 1}] \`${span.deepLink}\` — ${where} (${stamp})`,
       span.text.replace(/^/gm, '    '),
-      span.truncated ? '    …clipped; follow the link for the rest.' : '',
       '',
     );
   });

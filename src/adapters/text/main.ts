@@ -133,7 +133,7 @@ async function handleCommand(command: string, argument: string): Promise<boolean
         console.log(`\n  [${position + 1}] ${span.deepLink}`);
         console.log(`      ${where} (${stamp})`);
         console.log(`      matched [${span.matched.join(', ')}] score ${span.score}`);
-        console.log(`      ${span.text.slice(0, 300).replace(/\n/g, '\n      ')}`);
+        console.log(`      ${span.text.replace(/\n/g, '\n      ')}`);
       });
       console.log('');
       return false;
@@ -173,9 +173,14 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       console.log('  still going');
       return false;
 
-    case 'abort':
-      if ((await call({ type: 'session.abort' })) !== null) console.log('  buffer discarded');
+    case 'abort': {
+      // Only leave if the abort actually happened. Quitting on a refusal would abandon the
+      // very session the core just declined to throw away.
+      const aborted = await call({ type: 'session.abort' });
+      if (aborted === null) return false;
+      console.log('  buffer discarded');
       return true;
+    }
 
     case 'name':
       return printResult(await call({ type: 'identity.set', name: argument }));

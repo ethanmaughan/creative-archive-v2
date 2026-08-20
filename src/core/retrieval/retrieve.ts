@@ -15,9 +15,6 @@ import { describeQuery, parseQuery } from './query.ts';
  * search behind it is an assertion; with it, a bad index is diagnosable.
  */
 
-/** How much of a span is returned. A long transcript turn must not eat the context. */
-export const SPAN_CHARS = 600;
-
 export interface RetrievedSpan {
   readonly deepLink: string;
   readonly title: string;
@@ -25,7 +22,6 @@ export interface RetrievedSpan {
   readonly provenance: Provenance;
   readonly date: string | null;
   readonly text: string;
-  readonly truncated: boolean;
   readonly score: number;
   readonly matched: readonly string[];
 }
@@ -69,21 +65,21 @@ export function retrieve(index: ArchiveIndex, mode: Mode, queryText: string): Re
   // What is recorded instead is which tier answered, and that tier 2 was unavailable.
   const outcome = index.search(query, permit);
 
-  const spans = outcome.hits.map((hit) => {
-    const text =
-      hit.span.text.length > SPAN_CHARS ? hit.span.text.slice(0, SPAN_CHARS) : hit.span.text;
-    return {
-      deepLink: hit.span.deepLink,
-      title: hit.document.title,
-      heading: hit.span.heading,
-      provenance: hit.document.provenance,
-      date: hit.document.date,
-      text,
-      truncated: text.length < hit.span.text.length,
-      score: Number(hit.score.toFixed(4)),
-      matched: hit.matched,
-    };
-  });
+  // Spans are returned whole. A span is already bounded by something a human chose — a
+  // heading, or one conversational turn — and clipping mid-sentence produces a quotation
+  // that says something the source did not. If a real archive turns out to have spans large
+  // enough to crowd the context, that is a number to derive from that archive rather than
+  // guess at here; `limit` is the bound that exists today.
+  const spans = outcome.hits.map((hit) => ({
+    deepLink: hit.span.deepLink,
+    title: hit.document.title,
+    heading: hit.span.heading,
+    provenance: hit.document.provenance,
+    date: hit.document.date,
+    text: hit.span.text,
+    score: Number(hit.score.toFixed(4)),
+    matched: hit.matched,
+  }));
 
   return {
     spans,

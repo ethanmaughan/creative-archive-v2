@@ -122,6 +122,11 @@ export class DaemonServer {
 
     socket.on('close', () => {
       this.#clearIdle(connection);
+      // An abandoned session still holds its transcript's file descriptor. Nothing frees
+      // it on garbage collection, so it has to be released here or the daemon leaks one
+      // per dropped client.
+      connection.session?.abandon();
+      connection.session = null;
       if (connection.archive !== null) this.#liveArchives.delete(connection.archive.root);
       this.#connections.delete(connection);
     });

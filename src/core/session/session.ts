@@ -373,6 +373,22 @@ export class Session {
     this.#state = 'aborted';
   }
 
+  /**
+   * The client went away without ending the session.
+   *
+   * Release the file handle and nothing else. The transcript is already whole on disk and
+   * the open-session pointer stays put, so the next launch closes the books as a crash
+   * (§5.3) — which is what this is. Deleting or rewriting anything here would be the one
+   * thing recovery is designed to make unnecessary.
+   *
+   * This exists because an fd opened with openSync is not released when the Session is
+   * garbage collected: without it, every abandoned session holds a descriptor for the
+   * lifetime of the daemon.
+   */
+  abandon(): void {
+    if (this.#log.isOpen) this.#log.close();
+  }
+
   #meta(ended?: { endedAt: string; endedBy: EndReason }): SessionMeta {
     if (this.#id === null || this.#committedAt === null) {
       throw new SessionStateError('session has not committed');
