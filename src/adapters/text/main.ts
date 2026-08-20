@@ -170,6 +170,12 @@ async function handleCommand(command: string, argument: string): Promise<boolean
         `  ${report.highlights} highlight(s), ${report.openThreads} open thread(s)` +
           `${report.tags.length > 0 ? `, tags [${report.tags.join(', ')}]` : ''}`,
       );
+      if (report.markerThreads > 0 || report.yieldedToMarkers > 0) {
+        console.log(
+          `  ${report.markerThreads} thread(s) from your markers; ` +
+            `${report.yieldedToMarkers} proposal(s) yielded to them`,
+        );
+      }
       if (report.droppedReferences > 0) {
         console.log(
           `  ${report.droppedReferences} citation(s) pointed at turns that do not exist`,
@@ -267,6 +273,8 @@ interface DerivationReport {
   highlights: number;
   openThreads: number;
   droppedReferences: number;
+  yieldedToMarkers: number;
+  markerThreads: number;
   unresolvedPlaceholders: string[];
   model: string;
 }

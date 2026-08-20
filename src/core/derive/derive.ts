@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { Archive } from '../archive/archive.ts';
 import { CoreError } from '../errors.ts';
 import type { ModelClient } from '../model/model-client.ts';
+import type { Legend } from '../markers/legend.ts';
+import { indexedSpans, markedSpans, markedTurns } from '../markers/spans.ts';
 import type { Mode } from '../modes/mode.ts';
 import { readMeta, writeMeta } from '../session/meta.ts';
 import { sessionDir } from '../session/session-id.ts';
@@ -70,6 +72,12 @@ export interface DerivationOptions {
    */
   readonly mode: Mode;
   readonly model: ModelClient;
+  /**
+   * The annotation vocabulary (§5.6). Without it, marker rows in the transcript are still
+   * visible but the pass cannot tell which ones the legend routes to the error index, so it
+   * yields to them without contributing them.
+   */
+  readonly legend?: Legend;
   readonly configDir?: string;
   readonly now?: () => Date;
 }
@@ -83,6 +91,10 @@ export interface DerivationReport {
   readonly openThreads: number;
   /** Citations the model made to turns that do not exist. Visible, not silently dropped. */
   readonly droppedReferences: number;
+  /** Derived items discarded because a marker already speaks for that turn (invariant 6). */
+  readonly yieldedToMarkers: number;
+  /** Open threads contributed by markers rather than proposed by the pass. */
+  readonly markerThreads: number;
   readonly unresolvedPlaceholders: readonly string[];
   readonly model: string;
   readonly derivedAt: string | null;
@@ -104,6 +116,8 @@ export async function deriveSession(options: DerivationOptions): Promise<Derivat
     highlights: 0,
     openThreads: 0,
     droppedReferences: 0,
+    yieldedToMarkers: 0,
+    markerThreads: 0,
     unresolvedPlaceholders: [],
     model: model.id,
   };
@@ -125,6 +139,18 @@ export async function deriveSession(options: DerivationOptions): Promise<Derivat
     return { ...base, outcome: 'unparseable', wrote: [], derivedAt: null };
   }
 
+  // Invariant 6: the pass runs over the whole transcript, and where a marker covers a span its
+  // output for that span is discarded. Enforced here rather than asked for in the prompt —
+  // "please do not restate the marker" is not a guarantee, and this is.
+  const spans = markedSpans(entries, options.legend);
+  const marked = markedTurns(spans);
+  let yieldedToMarkers = 0;
+  const yields = (turn: number | undefined): boolean => {
+    if (turn === undefined || !marked.has(turn)) return false;
+    yieldedToMarkers += 1;
+    return true;
+  };
+
   let droppedReferences = 0;
   const noteDropped = <T>(value: T | null): T | null => {
     if (value === null) droppedReferences += 1;
@@ -141,6 +167,7 @@ export async function deriveSession(options: DerivationOptions): Promise<Derivat
   });
 
   const highlights: ResolvedHighlight[] = parsed.highlights.flatMap((highlight) => {
+    if (yields(highlight.turn)) return [];
     const entry = noteDropped(resolveTurn(entries, highlight.turn));
     if (entry === null) return [];
     return [
@@ -148,15 +175,35 @@ export async function deriveSession(options: DerivationOptions): Promise<Derivat
     ];
   });
 
-  const openThreads: ResolvedThread[] = parsed.open_threads.map((thread) => {
+  const derivedThreads: ResolvedThread[] = parsed.open_threads.flatMap((thread) => {
+    if (yields(thread.turn)) return [];
     const entry = thread.turn === undefined ? null : resolveTurn(entries, thread.turn);
     if (thread.turn !== undefined && entry === null) droppedReferences += 1;
+    return [
+      {
+        question: thread.question,
+        why: thread.why ?? null,
+        deepLink: entry === null ? null : `${TRANSCRIPT_FILE}#${entry.at}`,
+        source: 'derived' as const,
+      },
+    ];
+  });
+
+  // §5.4 / §5.5: open threads and the error index are one index written from three sources.
+  // Markers are the first of them, and they arrive as fact rather than as a proposal.
+  const markerThreads: ResolvedThread[] = indexedSpans(spans).map((span) => {
+    const covered = span.coversTurn === null ? null : resolveTurn(entries, span.coversTurn);
+    const marker = resolveTurn(entries, span.markerTurn);
     return {
-      question: thread.question,
-      why: thread.why ?? null,
-      deepLink: entry === null ? null : `${TRANSCRIPT_FILE}#${entry.at}`,
+      question: span.note.length > 0 ? span.note : (covered?.text ?? 'marked with no note'),
+      why: null,
+      deepLink: `${TRANSCRIPT_FILE}#${(covered ?? marker)?.at ?? ''}`,
+      source: 'marker' as const,
+      markerId: span.markerId,
     };
   });
+
+  const openThreads: ResolvedThread[] = [...markerThreads, ...derivedThreads];
 
   const meta = await readMeta(archive.store, sessionId);
   const content: DerivedContent = {
@@ -196,6 +243,8 @@ export async function deriveSession(options: DerivationOptions): Promise<Derivat
     highlights: highlights.length,
     openThreads: openThreads.length,
     droppedReferences,
+    yieldedToMarkers,
+    markerThreads: markerThreads.length,
     unresolvedPlaceholders: unresolvedPlaceholders(template),
     model: model.id,
     derivedAt,
