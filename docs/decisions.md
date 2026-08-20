@@ -65,10 +65,26 @@ over localhost, opt-in via `CREATIVE_ARCHIVE_MODEL`.
 
 Also resolves §11's "cleanup pass model" bullet toward local: the archive stays sealed.
 
-**Open conflict:** §8 phase 1 specifies SQLite FTS5 for structural retrieval. That is step
-2, so nothing here pre-commits it, but the two cannot both stand — see Open, below.
+**Resolved against §8 at step 2.** §8 phase 1 specifies SQLite FTS5, which this rules out.
+The index is built in process from the files instead, and rebuilt rather than persisted.
+That is not only a concession: §8's stated reason for going structural before semantic is
+debuggable results — "when a query returns the wrong thing you can see exactly why" — and an
+index whose scoring you can read serves that better than FTS5's opaque ranking.
 
-Cost to change: low today, higher after step 2 picks an index.
+Measured before committing to it, on a synthetic archive of 5,500 documents / 30,000 spans /
+25k distinct tokens (28.6 MB of markdown):
+
+|               |                         |
+| ------------- | ----------------------- |
+| cold build    | 2.0–3.7 s               |
+| heap retained | 153 MB (~5× the corpus) |
+| query         | 3–10 ms                 |
+
+Memory, not latency, is what would eventually force a real database. A personal archive an
+order of magnitude larger than that test would want reconsidering.
+
+Cost to change: moderate. The scanner, query language, and `retrieve` tool are all
+backend-agnostic; only `ArchiveIndex` internals would be replaced.
 
 ### D-006 — Config split: identity inside the archive, grants outside it
 
@@ -136,17 +152,54 @@ metadata", which for this layout is `meta.yaml`.
 
 Cost to change: high. It is the reason the commit path is safe.
 
-### D-012 — With no retrieval, groundedness reports are disabled
+### D-012 — Groundedness reports are gated on being able to search
 
-Step 1 has no retrieval tool, so the composed `archive_context` forbids the agent from
-reporting a gap at all, rather than letting it report absence it cannot verify.
+An agent with no retrieval may not report a gap at all: the composed `archive_context` says
+so outright, rather than letting it report an absence it cannot verify.
 
 §3.1 turns on distinguishing _not in the archive_ from _not found by this query_. An agent
-with no search has neither claim available. A confident "undocumented" that was really a
+that cannot search has neither claim available. A confident "undocumented" that was really a
 missing tool is exactly the failure the section exists to prevent.
 
-Cost to change: none — the warning is conditional on `retrievalAvailable` and drops out
-when step 2 lands.
+Since step 2 the gate is usually open, and the same rule now runs the other way: a report is
+permitted only when a search actually came back empty, and it has to carry what was searched.
+An archive with no index still gets the original refusal.
+
+Cost to change: none — it is one conditional on whether an index is present.
+
+### D-013 — Retrieval is automatic per turn, not model-invoked
+
+The model is not given tool calling in this build, so the core retrieves before each agent
+turn using the user's utterance as the query, and puts the spans and the search record into
+`archive_context` (§4.3 stays at five fragments — retrieval is context about the archive).
+`session.search` exposes the same tool directly for inspection.
+
+The alternative was waiting for tool calling, which would leave §3.1 unenforceable in the
+meantime: an agent that cannot search cannot honestly say what the archive does or does not
+hold, so groundedness would stay aspirational through two more build steps.
+
+Retrieved spans are labelled as content, not instruction, and never enter the transcript —
+they are derived context, not conversation. The §6.4 rule about fetched content is cheap to
+apply here and expensive to retrofit later.
+
+Cost to change: low. When tool calling lands, the automatic pass becomes a fallback or is
+dropped; `retrieve` is already gated by `mode.tools`.
+
+### D-014 — The index is rebuilt on demand, not watched
+
+One index per archive, held by a registry. Closing a session marks it stale; the next caller
+pays for the rebuild. No file watcher, no background rebuild, no timer.
+
+During a session the only file changing is that session's own transcript, and those turns are
+already in the model's context — so a snapshot taken at session start is correct rather than
+merely convenient. What does change is that a _finished_ session becomes searchable, which is
+what makes §1's "sessions become new archive content" real. Rebuilding in the background at
+close would make `session.end` either slow or racy for a benefit nobody can observe.
+
+An edit made to the archive by hand mid-session is therefore invisible until a rebuild;
+`index.rebuild` forces one.
+
+Cost to change: low — a watcher would call `markStale`.
 
 ---
 
@@ -158,10 +211,6 @@ irreversible actions, listener idle behavior.
 
 Raised by this build and needing a decision:
 
-- **§8 FTS5 vs. D-005.** §8 phase 1 is "SQLite FTS5 over the markdown corpus"; D-005 says
-  no database. Step 2 has to pick: relax D-005 for the index (it is regenerable, so it is
-  not archive state), or build an in-process index at launch and accept the startup cost on
-  a large archive.
 - **The solutions partition is not expressible.** §5.5 requires material flagged
   `contains_solutions` to be unreadable by `tutor` and readable by `review`. Scope is an
   allow-list of globs with no negation, so "everything except this partition" cannot be
@@ -173,8 +222,16 @@ Raised by this build and needing a decision:
   the one place D-010 was not applied, on the grounds that churning four manifests at step
   3 is worse than an existence-checked forward reference.
 - **Tool calling.** `tools` gates core operations invoked over the protocol; the model is
-  not given tool-calling in step 1. When it is, the gate is already in the right place, but
-  the model needs a description of each tool that does not leak into the transcript.
+  still not given tool calling. When it is, the gate is already in the right place, but the
+  model needs a description of each tool that does not leak into the transcript, and D-013's
+  automatic retrieval pass should probably become a fallback rather than the primary path.
+- **Semantic retrieval (§8 phase 2) stays deferred**, correctly: structural retrieval has not
+  demonstrably failed yet. The trigger §8 names is "what did we say about X" starting to miss,
+  and `matchMode: 'any'` in the search record is the signal to watch — a rising rate of
+  relaxed matches is structural retrieval running out of road.
+- **Retrieval quality is untested against a real archive.** Everything here is measured on
+  synthetic prose and small fixtures. Scoring, span boundaries, and the 600-character clip are
+  all guesses until they meet a corpus somebody actually wrote.
 - **Spec cross-references do not resolve.** The build prompt cites "§12" for open decisions
   (the spec has them at §11) and "§11" for a decision-log format (the spec has none), and
   cites D-001 which appears nowhere in the spec. This file is the assumed answer.

@@ -149,7 +149,7 @@ export class Session {
   /** A turn from the user. Drives intake while buffering, conversation once open. */
   async say(text: string): Promise<SayResult> {
     if (this.#state !== 'buffering' && this.#state !== 'open' && this.#state !== 'ending') {
-      throw new SessionStateError(`cannot speak into a ${this.#state} session`);
+      throw new SessionStateError(`cannot speak into a session that is ${this.#state}`);
     }
     if (this.#state === 'ending') {
       throw new SessionStateError('session is awaiting an end confirmation');
@@ -267,7 +267,7 @@ export class Session {
    */
   async commit(mode: Mode, title: string): Promise<string> {
     if (this.#state !== 'buffering') {
-      throw new SessionStateError(`cannot commit a ${this.#state} session`);
+      throw new SessionStateError(`cannot commit a session that is ${this.#state}`);
     }
 
     const id = newSessionId(this.#now());
@@ -317,7 +317,7 @@ export class Session {
    */
   requestEnd(reason: EndReason = 'confirmed'): EndRequest {
     if (this.#state !== 'open') {
-      throw new SessionStateError(`cannot end a ${this.#state} session`);
+      throw new SessionStateError(`cannot end a session that is ${this.#state}`);
     }
     assertToolAllowed(this.#requireMode(), 'session_end');
 
@@ -362,7 +362,7 @@ export class Session {
   /** §5.1: abort before commit discards the buffer. After commit there is nothing to abort. */
   async abort(): Promise<void> {
     if (this.#state !== 'buffering') {
-      throw new SessionStateError(`cannot abort a ${this.#state} session`);
+      throw new SessionStateError(`cannot abort a session that is ${this.#state} — a committed session ends with a confirm, not an abort (§5.1)`);
     }
     this.#log.close();
     const store = this.#deps.archive.store;

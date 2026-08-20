@@ -8,6 +8,7 @@ import { loadIdentity, saveIdentity, type Identity } from '../identity/identity.
 import type { ModelClient } from '../model/model-client.ts';
 import { resolveModelClient } from '../model/resolve.ts';
 import { listModes, loadMode, type Mode } from '../modes/mode.ts';
+import { IndexRegistry } from '../retrieval/registry.ts';
 import { recoverArchive } from '../session/recovery.ts';
 import { GREETING, Session } from '../session/session.ts';
 import {
@@ -52,6 +53,7 @@ export class DaemonServer {
   #log: (message: string) => void;
   #connections = new Set<Connection>();
   #liveArchives = new Set<string>();
+  #indexes = new IndexRegistry();
   #modes: Mode[] = [];
 
   constructor(options: DaemonOptions = {}) {
@@ -223,6 +225,7 @@ export class DaemonServer {
           identity: this.#requireIdentity(connection),
           model: this.#model,
           modes: this.#modes,
+          index: await this.#indexes.get(archive),
           ...(mode !== undefined ? { mode } : {}),
         });
         this.#liveArchives.add(archive.root);
@@ -249,6 +252,27 @@ export class DaemonServer {
         return { recorded: true };
       }
 
+      case 'session.search': {
+        const session = this.#requireSession(connection);
+        this.#touchIdle(connection);
+        return session.search(request.query);
+      }
+
+      case 'index.status': {
+        const archive = this.#requireArchive(connection);
+        const index = this.#indexes.peek(archive.root);
+        return {
+          stats: index?.stats ?? null,
+          stale: this.#indexes.isStale(archive.root),
+        };
+      }
+
+      case 'index.rebuild': {
+        const archive = this.#requireArchive(connection);
+        this.#indexes.markStale(archive.root);
+        return (await this.#indexes.get(archive)).stats;
+      }
+
       case 'session.end': {
         const session = this.#requireSession(connection);
         this.#clearIdle(connection);
@@ -256,8 +280,12 @@ export class DaemonServer {
       }
 
       case 'session.end.confirm': {
+        const archive = this.#requireArchive(connection);
         const session = this.#requireSession(connection);
         const meta = await session.confirmEnd(request.token);
+        // A finished session is archive content (§1): mark the index stale so the next
+        // search can find what was just said.
+        this.#indexes.markStale(archive.root);
         this.#releaseSession(connection);
         return meta;
       }
@@ -286,6 +314,7 @@ export class DaemonServer {
           title: session?.title ?? null,
           transcript: session?.transcriptPath ?? null,
           model: this.#model.id,
+          lastSearch: session?.lastRetrieval?.searched ?? null,
         };
       }
 
@@ -310,6 +339,10 @@ export class DaemonServer {
     connection.identity = identity;
     connection.mode = modeId === undefined ? null : await loadMode(modeId);
 
+    // Built here, after recovery, so a session promoted out of a crashed buffer is
+    // searchable in the very session that recovered it.
+    const index = await this.#indexes.get(archive);
+
     return {
       archive: archive.root,
       identity,
@@ -317,6 +350,7 @@ export class DaemonServer {
       model: this.#model.id,
       modes: this.#modes.map((mode) => mode.id),
       recovery,
+      index: index.stats,
     };
   }
 
