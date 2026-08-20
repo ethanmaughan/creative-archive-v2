@@ -34,6 +34,12 @@ export async function derivationSystemPrompt(
  */
 export function numberTranscript(entries: readonly TranscriptEntry[]): string {
   return entries
-    .map((entry, index) => `[${index + 1}] ${entry.role}: ${entry.text}`)
+    .map((entry, index) => {
+      // Marker rows carry which marker fired: those are the user's own annotations, and the
+      // pass is told not to restate what they already say (§5.4, derivation yields to markers).
+      const role =
+        entry.markerId === undefined ? entry.role : `${entry.role}:${entry.markerId}`;
+      return `[${index + 1}] ${role}: ${entry.text}`;
+    })
     .join('\n\n');
 }

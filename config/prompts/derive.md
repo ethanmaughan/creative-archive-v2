@@ -43,6 +43,16 @@ conversation stalled or changed subject without finishing. These are what the ne
 resumes from — resuming where someone actually stalled beats resuming where a syllabus says
 they should be. Include the turn where the thread was left hanging.
 
+## Marker rows
+
+Some turns are `marker:<id>` rows. Those are the user's own annotations, made while thinking
+rather than inferred afterward, and they are already ground truth — you are not being asked to
+confirm, restate, or improve them. Do not raise an open thread or a highlight for a marker row
+or the turn it precedes; that ground is already covered, and anything you say about it is
+discarded.
+
+Everywhere else, you are the fallback. Say what you see.
+
 ## Rules
 
 - Only what the transcript supports. No conclusions nobody reached, no rationale nobody gave.

@@ -328,6 +328,7 @@ export class DaemonServer {
           sessionId,
           mode: await loadMode(modeId),
           model: this.#model,
+          ...(connection.legend !== null ? { legend: connection.legend } : {}),
         });
 
         // Derivation rewrites the session's title and tags, both of which are indexed.

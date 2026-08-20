@@ -19,6 +19,13 @@ export interface ResolvedThread {
   readonly question: string;
   readonly why: string | null;
   readonly deepLink: string | null;
+  /**
+   * Where this came from. §5.4: markers are ground truth and derivation is the fallback, with
+   * derived output "proposed at low confidence and queued for review" — so the two have to be
+   * distinguishable in the file, not merged into one list of equal claims.
+   */
+  readonly source: 'marker' | 'derived';
+  readonly markerId?: string;
 }
 
 export interface ResolvedOutlineEntry {
@@ -95,11 +102,21 @@ function renderHighlights(highlights: readonly ResolvedHighlight[]): string {
 
 function renderThreads(threads: readonly ResolvedThread[]): string {
   if (threads.length === 0) return '_Nothing left open._';
-  return threads
+
+  // Markers first: they are what the user said at the time, and they are not proposals.
+  const ordered = [
+    ...threads.filter((thread) => thread.source === 'marker'),
+    ...threads.filter((thread) => thread.source === 'derived'),
+  ];
+
+  return ordered
     .map((thread) => {
       const link = thread.deepLink === null ? '' : ` ([left here](${thread.deepLink}))`;
       const why = thread.why === null ? '' : ` — ${thread.why}`;
-      return `- ${thread.question}${why}${link}`;
+      if (thread.source === 'marker') {
+        return `- **${thread.markerId ?? 'marked'}**: ${thread.question}${why}${link}`;
+      }
+      return `- ${thread.question}${why}${link} _(proposed)_`;
     })
     .join('\n');
 }
