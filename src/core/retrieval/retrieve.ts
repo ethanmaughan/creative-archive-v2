@@ -45,6 +45,8 @@ export interface SearchedRecord {
   readonly matchMode: MatchMode;
   readonly tier: Tier | null;
   readonly referenceTierAvailable: boolean;
+  /** Whether the live session's own transcript was held out of its own search. */
+  readonly excludedCurrentSession: boolean;
 }
 
 export interface RetrievalResult {
@@ -54,9 +56,28 @@ export interface RetrievalResult {
   readonly empty: boolean;
 }
 
-export function retrieve(index: ArchiveIndex, mode: Mode, queryText: string): RetrievalResult {
+export interface RetrieveOptions {
+  /**
+   * Held out of the search. A live session passes its own transcript: the index is built from
+   * the files as they are now, so the utterance being answered is *in* it, and a query taken
+   * from that utterance matches it perfectly. Retrieval was handing the agent the question it
+   * had just been asked, ranked above the material that actually answered it.
+   *
+   * Nothing is lost — those turns are already in the model's context.
+   */
+  readonly exclude?: (path: string) => boolean;
+}
+
+export function retrieve(
+  index: ArchiveIndex,
+  mode: Mode,
+  queryText: string,
+  options: RetrieveOptions = {},
+): RetrievalResult {
   const query = parseQuery(queryText);
-  const permit = (path: string): boolean => matchesAnyGlob(mode.scope.read, path);
+  const exclude = options.exclude;
+  const permit = (path: string): boolean =>
+    matchesAnyGlob(mode.scope.read, path) && (exclude === undefined || !exclude(path));
 
   // §3.2's tiers are not yet a distinction: tier 1 is the user's own notes and prior
   // sessions, which is everything the index currently holds, and tier 2 is ingested
@@ -98,6 +119,7 @@ export function retrieve(index: ArchiveIndex, mode: Mode, queryText: string): Re
       // fall, and saying so is the difference between "no reference material covers this"
       // and "there is no reference material".
       referenceTierAvailable: false,
+      excludedCurrentSession: exclude !== undefined,
     },
     empty: spans.length === 0,
   };
@@ -122,6 +144,9 @@ export function describeSearch(record: SearchedRecord): string {
   }
   if (record.ignored.length > 0) {
     parts.push(`ignored unrecognized ${record.ignored.join(', ')}`);
+  }
+  if (record.excludedCurrentSession) {
+    parts.push('this session was held out of its own search');
   }
   return parts.join('; ');
 }

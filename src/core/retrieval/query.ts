@@ -30,7 +30,7 @@ export const DEFAULT_LIMIT = 8;
 const MAX_LIMIT = 50;
 
 const KEYS = new Set(['tag', 'after', 'before', 'heading', 'mode', 'in', 'limit']);
-const PROVENANCES = new Set<Provenance>(['note', 'session']);
+const PROVENANCES = new Set<Provenance>(['note', 'session', 'ingest']);
 
 /** Split on whitespace, keeping `key:"quoted value"` together. */
 function segments(input: string): string[] {

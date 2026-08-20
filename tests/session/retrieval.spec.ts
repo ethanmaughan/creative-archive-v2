@@ -51,7 +51,9 @@ describe('retrieval inside a session (§3.1, D-013)', () => {
       model,
       modes,
       mode: options.mode ?? tutor,
-      ...(options.withIndex ? { index: await ArchiveIndex.build(archive.store) } : {}),
+      ...(options.withIndex
+        ? { index: async (): Promise<ArchiveIndex> => ArchiveIndex.build(archive.store) }
+        : {}),
     });
     return { archive, model, session };
   };
@@ -100,6 +102,33 @@ describe('retrieval inside a session (§3.1, D-013)', () => {
     expect(transcript).toContain('how do I pick a pivot');
   });
 
+  it('holds this session out of its own search', async () => {
+    const { model, session } = await begin({ withIndex: true });
+
+    // The index is live, so the utterance being answered is already in it — and a query drawn
+    // from that utterance matches it better than anything else. Without the exclusion the
+    // agent was handed the question it had just been asked, ranked first.
+    await session.say('how do I pick a pivot');
+
+    expect(model.last).toContain('notes/row-reduction.md#pivots');
+    expect(model.last).not.toContain('transcript.md#');
+    expect(session.lastRetrieval?.searched.excludedCurrentSession).toBe(true);
+  });
+
+  it('finds material brought in mid-session (D-014, revised)', async () => {
+    const { archive, model, session } = await begin({ withIndex: true });
+    await session.say('starting');
+
+    // Written after the session began. A snapshot taken at begin would never see it.
+    await archive.store.write(
+      'notes/late.md',
+      '## Escalation\n\nEach mission should cost the crew something irrecoverable.\n',
+    );
+
+    await session.say('what about escalation');
+    expect(model.last).toContain('notes/late.md#escalation');
+  });
+
   it('records what the last turn searched', async () => {
     const { session } = await begin({ withIndex: true });
     await session.say('pivot');
@@ -112,7 +141,7 @@ describe('retrieval inside a session (§3.1, D-013)', () => {
     const { session } = await begin({ withIndex: true });
     await session.say('pivot');
 
-    const result = session.search('heading:pivots');
+    const result = await session.search('heading:pivots');
     expect(result.spans).toHaveLength(1);
     expect(result.spans[0]!.deepLink).toBe('notes/row-reduction.md#pivots');
   });
@@ -122,13 +151,13 @@ describe('retrieval inside a session (§3.1, D-013)', () => {
     const { session } = await begin({ withIndex: true, mode: toolless });
     await session.say('pivot');
 
-    expect(() => session.search('pivot')).toThrow(CoreError);
+    await expect(session.search('pivot')).rejects.toThrow(CoreError);
     expect(session.lastRetrieval).toBeNull();
   });
 
   it('refuses the tool when the archive has no index', async () => {
     const { session } = await begin({ withIndex: false });
     await session.say('pivot');
-    expect(() => session.search('pivot')).toThrow(/no index/);
+    await expect(session.search('pivot')).rejects.toThrow(/no index/);
   });
 });

@@ -13,10 +13,11 @@
  * (§5.5) so it never surfaces as though it were something concluded in conversation, and
  * tutor mode's retrieval tiers (§3.2) are expressed directly in these values.
  *
- * `ingest` arrives with step 4 and is deliberately absent: a value nothing can produce is
- * a tier that silently never matches.
+ * §5.5: ingested material carries its provenance through retrieval so it never surfaces as
+ * though it were something concluded in conversation. That is the same reason a session turn
+ * and a note are distinguishable — where a claim came from changes what it is.
  */
-export type Provenance = 'note' | 'session';
+export type Provenance = 'note' | 'session' | 'ingest';
 
 export interface Span {
   /** Stable within a document: a heading slug, or a transcript entry's timestamp. */
