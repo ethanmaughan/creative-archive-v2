@@ -7,6 +7,8 @@ import { SessionStateError } from '../errors.ts';
 import type { Identity } from '../identity/identity.ts';
 import type { ModelClient, ModelTurn } from '../model/model-client.ts';
 import { assertToolAllowed, type Mode } from '../modes/mode.ts';
+import type { ArchiveIndex } from '../retrieval/index.ts';
+import { retrieve, type RetrievalResult } from '../retrieval/retrieve.ts';
 import { buildSystemPrompt } from '../prompt/compose.ts';
 import type { AppendHandle } from '../storage/file-store.ts';
 import { ScopedFileStore, assertScopeWrite } from '../storage/scoped-file-store.ts';
@@ -30,6 +32,14 @@ export interface SessionDeps {
   readonly modes: readonly Mode[];
   /** Pre-selected mode. When absent, intake resolves it from the first utterance (§5.1). */
   readonly mode?: Mode;
+  /**
+   * Snapshot of the archive index (§8). A snapshot is correct rather than convenient: the
+   * only thing changing during a session is this session's own transcript, and those turns
+   * are already in the model's context. The registry rebuilds between sessions.
+   *
+   * Absent means no retrieval, and the prompt says so instead of letting the agent guess.
+   */
+  readonly index?: ArchiveIndex;
   readonly now?: () => Date;
   readonly configDir?: string;
 }
@@ -70,6 +80,7 @@ export class Session {
   #turns: ModelTurn[] = [];
   #endToken: string | null = null;
   #endReason: EndReason | null = null;
+  #lastRetrieval: RetrievalResult | null = null;
 
   private constructor(
     deps: SessionDeps,
@@ -158,16 +169,55 @@ export class Session {
       }
     }
 
-    const reply = await this.#respond();
+    const reply = await this.#respond(text);
     return { reply, committed, sessionId: this.#id };
   }
 
-  async #respond(): Promise<string> {
+  /**
+   * Retrieval for one turn, keyed on what the user just said.
+   *
+   * The model is not given tool calling in this build, so retrieval is automatic rather
+   * than model-invoked (D-013). The alternative — no retrieval until tool calling exists —
+   * would leave §3.1 groundedness unenforceable, since an agent that cannot search cannot
+   * honestly report what the archive does or does not hold.
+   */
+  #retrieveFor(utterance: string): RetrievalResult | null {
+    const index = this.#deps.index;
+    if (index === undefined) return null;
+
     const mode = this.#requireMode();
+    if (!mode.tools.includes('retrieve')) return null;
+
+    this.#lastRetrieval = retrieve(index, mode, utterance);
+    return this.#lastRetrieval;
+  }
+
+  /** What the last turn actually searched, for a caller that wants to show its work. */
+  get lastRetrieval(): RetrievalResult | null {
+    return this.#lastRetrieval;
+  }
+
+  /** The `retrieve` tool, invoked directly — the adapter's way of inspecting the index. */
+  search(queryText: string): RetrievalResult {
+    const index = this.#deps.index;
+    if (index === undefined) {
+      throw new SessionStateError('this archive has no index (retrieval is unavailable)');
+    }
+    const mode = this.#requireMode();
+    assertToolAllowed(mode, 'retrieve');
+    return retrieve(index, mode, queryText);
+  }
+
+  async #respond(utterance: string): Promise<string> {
+    const mode = this.#requireMode();
+    const retrieval = this.#retrieveFor(utterance);
+
     const { prompt } = await buildSystemPrompt({
       archiveRoot: this.#deps.archive.root,
       mode,
       identity: this.#deps.identity,
+      retrievalAvailable: this.#deps.index !== undefined,
+      ...(retrieval !== null ? { retrieval } : {}),
       ...(this.#deps.configDir !== undefined ? { configDir: this.#deps.configDir } : {}),
     });
 

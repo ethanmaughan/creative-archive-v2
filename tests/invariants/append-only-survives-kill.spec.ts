@@ -69,10 +69,10 @@ describe('invariant: append-only transcript survives a killed process', () => {
     expect(await readOpenSession(archive.store)).toBeNull();
 
     const buffers = await archive.store.list('.creative-archive/scratch');
-    const transcripts = buffers.filter((path) => path.endsWith('.md'));
+    const transcripts = buffers.filter((entry) => entry.path.endsWith('.md'));
     expect(transcripts).toHaveLength(1);
 
-    const raw = await archive.store.read(transcripts[0]!);
+    const raw = await archive.store.read(transcripts[0]!.path);
     expect(raw).toContain('I am annoyed and have not said what about yet');
   });
 

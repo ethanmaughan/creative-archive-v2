@@ -72,9 +72,10 @@ export async function recoverArchive(
   }
 
   if (await store.exists(SCRATCH_DIR)) {
-    for (const path of await store.list(SCRATCH_DIR)) {
-      if (!path.endsWith('.md')) continue;
+    for (const entry of await store.list(SCRATCH_DIR)) {
+      if (entry.kind !== 'file' || !entry.path.endsWith('.md')) continue;
 
+      const path = entry.path;
       const scratchId = path.slice(SCRATCH_DIR.length + 1, -'.md'.length);
       const sidecarPath = `${SCRATCH_DIR}/${scratchId}.yaml`;
       const raw = await store.read(path);

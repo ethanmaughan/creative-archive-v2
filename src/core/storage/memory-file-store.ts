@@ -1,5 +1,10 @@
 import { posix } from 'node:path';
-import { normalizeArchivePath, type AppendHandle, type FileStore } from './file-store.ts';
+import {
+  normalizeArchivePath,
+  type AppendHandle,
+  type FileEntry,
+  type FileStore,
+} from './file-store.ts';
 
 /**
  * In-memory store for unit tests of scope and lifecycle logic. The durability invariants
@@ -34,17 +39,20 @@ export class MemoryFileStore implements FileStore {
     return this.files.has(key) || this.dirs.has(key);
   }
 
-  async list(path: string): Promise<string[]> {
+  async list(path: string): Promise<FileEntry[]> {
     const key = normalizeArchivePath(path);
-    const prefix = `${key}/`;
-    const children = new Set<string>();
+    const prefix = key === '.' ? '' : `${key}/`;
+    const children = new Map<string, 'file' | 'dir'>();
     for (const candidate of [...this.files.keys(), ...this.dirs]) {
       if (!candidate.startsWith(prefix)) continue;
       const rest = candidate.slice(prefix.length);
       const head = rest.split('/')[0]!;
-      children.add(`${key}/${head}`);
+      const child = `${prefix}${head}`;
+      children.set(child, rest.includes('/') || this.dirs.has(child) ? 'dir' : 'file');
     }
-    return [...children].sort();
+    return [...children]
+      .map(([childPath, kind]) => ({ path: childPath, kind }))
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   async mkdir(path: string): Promise<void> {

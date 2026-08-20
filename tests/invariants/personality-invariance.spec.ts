@@ -55,8 +55,8 @@ describe('invariant: personality does not reach the archive layer', () => {
       id,
       transcript: await archive.store.read(`${sessionDir(id)}/${TRANSCRIPT_FILE}`),
       meta: await readMeta(archive.store, id),
-      files: (await archive.store.list(sessionDir(id))).map((path) =>
-        path.slice(sessionDir(id).length + 1),
+      files: (await archive.store.list(sessionDir(id))).map((entry) =>
+        entry.path.slice(sessionDir(id).length + 1),
       ),
     };
   };

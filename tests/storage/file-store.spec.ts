@@ -14,17 +14,14 @@ describe('normalizeArchivePath', () => {
   });
 
   it('rejects anything that could leave the archive', () => {
-    for (const bad of [
-      '/etc/passwd',
-      '../outside.md',
-      'a/../../b.md',
-      '',
-      '.',
-      'C:/x',
-      'a\\b',
-    ]) {
+    for (const bad of ['/etc/passwd', '../outside.md', 'a/../../b.md', '', 'C:/x', 'a\\b']) {
       expect(() => normalizeArchivePath(bad), bad).toThrow(PathEscape);
     }
+  });
+
+  it("treats '.' as the archive root, so the archive can be walked", () => {
+    expect(normalizeArchivePath('.')).toBe('.');
+    expect(normalizeArchivePath('./')).toBe('.');
   });
 
   it('allows .. that stays inside the archive', () => {
@@ -54,7 +51,10 @@ describe('NodeFileStore', () => {
   it('lists one level of entries as archive-relative paths', async () => {
     await store.write('sessions/a/transcript.md', '');
     await store.write('sessions/b/transcript.md', '');
-    expect(await store.list('sessions')).toEqual(['sessions/a', 'sessions/b']);
+    expect(await store.list('sessions')).toEqual([
+      { path: 'sessions/a', kind: 'dir' },
+      { path: 'sessions/b', kind: 'dir' },
+    ]);
   });
 
   it('renames across directories, creating the target parent', async () => {

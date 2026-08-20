@@ -8,7 +8,7 @@ import { ConfigInvalid, CoreError } from '../errors.ts';
 import type { Scope } from '../storage/scoped-file-store.ts';
 
 /** Tools the core actually implements today. */
-export const IMPLEMENTED_TOOLS = ['footnote', 'session_end'] as const;
+export const IMPLEMENTED_TOOLS = ['retrieve', 'footnote', 'session_end'] as const;
 
 /**
  * Tools the spec assigns to a mode manifest that a later step implements. Naming one is a
@@ -16,9 +16,7 @@ export const IMPLEMENTED_TOOLS = ['footnote', 'session_end'] as const;
  * ignored is a mode whose behavior does not match its declaration, which is the failure
  * the declaration exists to prevent.
  */
-export const DEFERRED_TOOLS: Record<string, string> = {
-  retrieve: 'structural retrieval (build order step 2)',
-};
+export const DEFERRED_TOOLS: Record<string, string> = {};
 
 const ScopeSchema = z.object({
   read: z.array(z.string().min(1)),

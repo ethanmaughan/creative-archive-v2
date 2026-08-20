@@ -63,7 +63,7 @@ describe('mode manifest validation', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('rejects a deferred tool by name rather than ignoring it', async () => {
+  it('accepts retrieve now that structural retrieval exists', async () => {
     const path = writeManifest(
       [
         'id: probe',
@@ -75,7 +75,24 @@ describe('mode manifest validation', () => {
         'tools: [retrieve, footnote]',
       ].join('\n'),
     );
-    await expect(loadModeFile(path)).rejects.toThrow(/tool 'retrieve' is not implemented/);
+    expect((await loadModeFile(path)).tools).toEqual(['retrieve', 'footnote']);
+  });
+
+  it('rejects a tool the core does not implement, rather than ignoring it', async () => {
+    // DEFERRED_TOOLS is empty now that `retrieve` has landed; the unknown-tool path is what
+    // still guards a manifest from declaring behaviour the core would silently not provide.
+    const path = writeManifest(
+      [
+        'id: probe',
+        'label: Probe',
+        'prompt_fragment: prompts/modes/tutor.md',
+        'scope:',
+        "  read: ['**']",
+        "  write: ['sessions/**']",
+        'tools: [derive, footnote]',
+      ].join('\n'),
+    );
+    await expect(loadModeFile(path)).rejects.toThrow(/unknown tool 'derive'/);
   });
 
   it('rejects a capabilities block, which nothing enforces until step 8', async () => {
