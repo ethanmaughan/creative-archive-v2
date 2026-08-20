@@ -21,6 +21,7 @@ export const RequestSchema = z.discriminatedUnion('type', [
     mode: z.string().optional(),
   }),
   z.object({ type: z.literal('modes.list') }),
+  z.object({ type: z.literal('legend.list') }),
   z.object({ type: z.literal('identity.get') }),
   z.object({
     type: z.literal('identity.set'),

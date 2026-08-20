@@ -6,6 +6,7 @@ import { deriveSession } from '../derive/derive.ts';
 import { socketPath } from '../config/paths.ts';
 import { CoreError, SessionStateError } from '../errors.ts';
 import { loadIdentity, saveIdentity, type Identity } from '../identity/identity.ts';
+import { loadLegend, type Legend } from '../markers/legend.ts';
 import type { ModelClient } from '../model/model-client.ts';
 import { resolveModelClient } from '../model/resolve.ts';
 import { listModes, loadMode, type Mode } from '../modes/mode.ts';
@@ -32,6 +33,7 @@ interface Connection {
   readonly socket: Socket;
   archive: Archive | null;
   identity: Identity | null;
+  legend: Legend | null;
   mode: Mode | null;
   session: Session | null;
   /** The session this connection last closed, so `derive` needs no argument after an end. */
@@ -120,6 +122,7 @@ export class DaemonServer {
       socket,
       archive: null,
       identity: null,
+      legend: null,
       mode: null,
       session: null,
       lastClosed: null,
@@ -206,6 +209,20 @@ export class DaemonServer {
       case 'attach':
         return this.#attach(connection, request.archive, request.mode);
 
+      case 'legend.list': {
+        const legend = connection.legend;
+        if (legend === null) throw new CoreError('not_attached', 'attach to an archive first');
+        return {
+          source: legend.source,
+          markers: legend.entries.map((entry) => ({
+            phrase: entry.phrase,
+            id: entry.id,
+            span: entry.span,
+            writes: entry.writes,
+          })),
+        };
+      }
+
       case 'modes.list':
         return this.#modes.map((mode) => ({
           id: mode.id,
@@ -250,6 +267,7 @@ export class DaemonServer {
           model: this.#model,
           modes: this.#modes,
           index: await this.#indexes.get(archive),
+          ...(connection.legend !== null ? { legend: connection.legend } : {}),
           ...(mode !== undefined ? { mode } : {}),
         });
         this.#liveSession = { archiveRoot: archive.root, connection };
@@ -398,6 +416,7 @@ export class DaemonServer {
 
     connection.archive = archive;
     connection.identity = identity;
+    connection.legend = await loadLegend(archive.store);
     connection.mode = modeId === undefined ? null : await loadMode(modeId);
 
     // Built here, after recovery, so a session promoted out of a crashed buffer is
@@ -412,6 +431,14 @@ export class DaemonServer {
       modes: this.#modes.map((mode) => mode.id),
       recovery,
       index: index.stats,
+      legend: {
+        source: connection.legend.source,
+        markers: connection.legend.entries.map((entry) => ({
+          phrase: entry.phrase,
+          id: entry.id,
+          writes: entry.writes,
+        })),
+      },
     };
   }
 

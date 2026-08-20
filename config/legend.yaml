@@ -1,0 +1,42 @@
+# The legend (§5.6) — the annotation vocabulary you and the agent both read.
+#
+# This is the shipped default. Copy it to `<archive>/.creative-archive/legend.yaml` and edit
+# it there: the legend is yours, it lives in your archive, and it is versioned with it.
+#
+# Five tags, per §5.6's own advice. Five you will actually remember beats twenty you will
+# not, and the archive will tell you what is missing — if you keep reaching for a marker
+# that does not exist, that is when to add it.
+#
+# Every phrase leads with `mark`. That particle is load-bearing: you will eventually say
+# "that's a known error in the compiler" and mean it descriptively, and without the particle
+# that sentence would file an annotation.
+
+- phrase: mark known error
+  namespace: tag
+  id: known-error
+  span: forward
+  writes: [transcript, error-index]
+
+- phrase: mark confusion
+  namespace: tag
+  id: confusion
+  span: forward
+  writes: [transcript, error-index]
+
+- phrase: mark insight
+  namespace: tag
+  id: insight
+  span: forward
+  writes: [transcript]
+
+- phrase: mark resolved
+  namespace: tag
+  id: resolved
+  span: forward
+  writes: [transcript]
+
+- phrase: mark revisit
+  namespace: tag
+  id: revisit
+  span: forward
+  writes: [transcript, error-index]

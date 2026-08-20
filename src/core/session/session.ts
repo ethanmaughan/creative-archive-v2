@@ -6,6 +6,8 @@ import { ARCHIVE_INTERNAL_DIR } from '../config/paths.ts';
 import { SessionStateError } from '../errors.ts';
 import type { Identity } from '../identity/identity.ts';
 import type { ModelClient, ModelTurn } from '../model/model-client.ts';
+import { matchMarker } from '../markers/match.ts';
+import type { Legend } from '../markers/legend.ts';
 import { assertToolAllowed, type Mode } from '../modes/mode.ts';
 import type { ArchiveIndex } from '../retrieval/index.ts';
 import { retrieve, type RetrievalResult } from '../retrieval/retrieve.ts';
@@ -40,6 +42,12 @@ export interface SessionDeps {
    * Absent means no retrieval, and the prompt says so instead of letting the agent guess.
    */
   readonly index?: ArchiveIndex;
+  /**
+   * The annotation vocabulary (§5.6). Absent means no marker can fire, which is a legible
+   * state — an archive with no legend simply has no markers, and derivation falls back to
+   * being the only annotation there is (§5.4).
+   */
+  readonly legend?: Legend;
   readonly now?: () => Date;
   readonly configDir?: string;
 }
@@ -48,6 +56,8 @@ export interface SayResult {
   readonly reply: string;
   readonly committed: boolean;
   readonly sessionId: string | null;
+  /** Set when the utterance was a marker rather than something said to the agent (§5.6). */
+  readonly marker?: { readonly id: string; readonly note: string };
 }
 
 export interface EndRequest {
@@ -155,6 +165,27 @@ export class Session {
       throw new SessionStateError('session is awaiting an end confirmation');
     }
 
+    // §5.6: a marker records rather than says. It fires silently and is never confirmed, so
+    // it produces no agent turn and never reaches the model — which is also what makes its
+    // forward span land on the user's next utterance rather than on a reply in between.
+    const marker = this.#matchMarker(text);
+    if (marker !== null) {
+      this.#log.appendAndSync(
+        formatEntry({
+          at: this.#now().toISOString(),
+          role: 'marker',
+          text: marker.note,
+          markerId: marker.entry.id,
+        }),
+      );
+      return {
+        reply: '',
+        committed: false,
+        sessionId: this.#id,
+        marker: { id: marker.entry.id, note: marker.note },
+      };
+    }
+
     this.#appendEntry('human', text);
     this.#turns.push({ role: 'human', text });
 
@@ -206,6 +237,18 @@ export class Session {
     const mode = this.#requireMode();
     assertToolAllowed(mode, 'retrieve');
     return retrieve(index, mode, queryText);
+  }
+
+  /**
+   * Markers annotate a session that exists. Before intake resolves a mode there is no `mark`
+   * tool to grant, and the same rule already applies to footnotes (§5.2) — annotation is a
+   * thing you do to a session, not to the buffer that might become one.
+   */
+  #matchMarker(text: string): ReturnType<typeof matchMarker> {
+    const legend = this.#deps.legend;
+    if (legend === undefined || this.#state !== 'open') return null;
+    if (!this.#requireMode().tools.includes('mark')) return null;
+    return matchMarker(text, legend);
   }
 
   async #respond(utterance: string): Promise<string> {

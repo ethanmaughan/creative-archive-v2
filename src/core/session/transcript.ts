@@ -20,7 +20,7 @@
 
 export const TRANSCRIPT_FILE = 'transcript.md';
 
-export const TRANSCRIPT_ROLES = ['human', 'agent', 'footnote'] as const;
+export const TRANSCRIPT_ROLES = ['human', 'agent', 'footnote', 'marker'] as const;
 
 export type TranscriptRole = (typeof TRANSCRIPT_ROLES)[number];
 
@@ -28,12 +28,28 @@ export interface TranscriptEntry {
   readonly at: string;
   readonly role: TranscriptRole;
   readonly text: string;
+  /**
+   * Which legend entry fired, for `marker` rows only (§5.6).
+   *
+   * Markers live in the append-only layer because they are ground truth: a derivation pass
+   * guessing "he sounded unsure here" is soft, and the user saying `mark known error` is not.
+   * Putting them anywhere regenerable would make them the same kind of claim as a guess.
+   */
+  readonly markerId?: string;
 }
 
-const HEADER = /^## (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) (human|agent|footnote)$/;
+const HEADER =
+  /^## (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) (human|agent|footnote|marker)(?::([a-z0-9][a-z0-9-]*))?$/;
 
 export function formatEntry(entry: TranscriptEntry): string {
-  return `## ${entry.at} ${entry.role}\n\n${entry.text.trim()}\n\n`;
+  const role = entry.markerId === undefined ? entry.role : `${entry.role}:${entry.markerId}`;
+  const text = entry.text.trim();
+  // An entry with no body — a marker fired with nothing added — gets no empty paragraph.
+  // The transcript is append-only, so a stray blank line is permanent, and this file is
+  // meant to be read by a person.
+  return text.length === 0
+    ? `## ${entry.at} ${role}\n\n`
+    : `## ${entry.at} ${role}\n\n${text}\n\n`;
 }
 
 /**
@@ -43,11 +59,21 @@ export function formatEntry(entry: TranscriptEntry): string {
  */
 export function parseTranscript(raw: string): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
-  let current: { at: string; role: TranscriptRole; lines: string[] } | null = null;
+  let current: {
+    at: string;
+    role: TranscriptRole;
+    markerId: string | undefined;
+    lines: string[];
+  } | null = null;
 
   const flush = (): void => {
     if (current === null) return;
-    entries.push({ at: current.at, role: current.role, text: current.lines.join('\n').trim() });
+    entries.push({
+      at: current.at,
+      role: current.role,
+      text: current.lines.join('\n').trim(),
+      ...(current.markerId === undefined ? {} : { markerId: current.markerId }),
+    });
     current = null;
   };
 
@@ -55,7 +81,12 @@ export function parseTranscript(raw: string): TranscriptEntry[] {
     const match = HEADER.exec(line);
     if (match) {
       flush();
-      current = { at: match[1]!, role: match[2] as TranscriptRole, lines: [] };
+      current = {
+        at: match[1]!,
+        role: match[2] as TranscriptRole,
+        markerId: match[3],
+        lines: [],
+      };
       continue;
     }
     if (current !== null) current.lines.push(line);

@@ -4,5 +4,5 @@ prompt_fragment: prompts/modes/creative.md
 scope:
   read: ['**']
   write: ['sessions/**']
-tools: [retrieve, footnote, session_end]
+tools: [retrieve, mark, footnote, session_end]
 session_template: templates/creative-session.md
