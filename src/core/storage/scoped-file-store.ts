@@ -1,6 +1,11 @@
 import { ScopeViolation } from '../errors.ts';
 import { matchesAnyGlob } from './glob.ts';
-import { normalizeArchivePath, type AppendHandle, type FileStore } from './file-store.ts';
+import {
+  normalizeArchivePath,
+  type AppendHandle,
+  type FileEntry,
+  type FileStore,
+} from './file-store.ts';
 
 export interface Scope {
   readonly read: readonly string[];
@@ -73,7 +78,7 @@ export class ScopedFileStore implements FileStore {
     return this.#inner.exists(this.#checkRead(path));
   }
 
-  async list(path: string): Promise<string[]> {
+  async list(path: string): Promise<FileEntry[]> {
     return this.#inner.list(this.#checkRead(path));
   }
 

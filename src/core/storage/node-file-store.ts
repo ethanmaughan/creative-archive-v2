@@ -2,7 +2,12 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { AppendLog } from './append-log.ts';
-import { normalizeArchivePath, type AppendHandle, type FileStore } from './file-store.ts';
+import {
+  normalizeArchivePath,
+  type AppendHandle,
+  type FileEntry,
+  type FileStore,
+} from './file-store.ts';
 
 /** The real store: archive-relative paths resolved against one fixed root. */
 export class NodeFileStore implements FileStore {
@@ -30,10 +35,16 @@ export class NodeFileStore implements FileStore {
     return existsSync(this.resolve(path));
   }
 
-  async list(path: string): Promise<string[]> {
+  async list(path: string): Promise<FileEntry[]> {
     const relative = normalizeArchivePath(path);
     const entries = await readdir(join(this.root, relative), { withFileTypes: true });
-    return entries.map((entry) => `${relative}/${entry.name}`).sort();
+    const prefix = relative === '.' ? '' : `${relative}/`;
+    return entries
+      .map((entry) => ({
+        path: `${prefix}${entry.name}`,
+        kind: entry.isDirectory() ? ('dir' as const) : ('file' as const),
+      }))
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   async mkdir(path: string): Promise<void> {

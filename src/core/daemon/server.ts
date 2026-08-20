@@ -8,6 +8,7 @@ import { loadIdentity, saveIdentity, type Identity } from '../identity/identity.
 import type { ModelClient } from '../model/model-client.ts';
 import { resolveModelClient } from '../model/resolve.ts';
 import { listModes, loadMode, type Mode } from '../modes/mode.ts';
+import { IndexRegistry } from '../retrieval/registry.ts';
 import { recoverArchive } from '../session/recovery.ts';
 import { GREETING, Session } from '../session/session.ts';
 import {
@@ -51,7 +52,19 @@ export class DaemonServer {
   #idleMs: number;
   #log: (message: string) => void;
   #connections = new Set<Connection>();
-  #liveArchives = new Set<string>();
+  /**
+   * The one session that is currently live, anywhere.
+   *
+   * Not a set keyed by archive: the limit is not that two sessions would collide on one
+   * archive's files, it is that there is one person here. Two conversations at once about
+   * different things is not a thing a human does, on one archive or two.
+   *
+   * It is also what keeps recovery safe. Recovery promotes or deletes whatever it finds in
+   * the scratch directory (D-009), so running it while a session is mid-intake would eat
+   * the buffer being written. Attach consults this before recovering.
+   */
+  #liveSession: { readonly archiveRoot: string; readonly connection: Connection } | null = null;
+  #indexes = new IndexRegistry();
   #modes: Mode[] = [];
 
   constructor(options: DaemonOptions = {}) {
@@ -120,7 +133,12 @@ export class DaemonServer {
 
     socket.on('close', () => {
       this.#clearIdle(connection);
-      if (connection.archive !== null) this.#liveArchives.delete(connection.archive.root);
+      // An abandoned session still holds its transcript's file descriptor. Nothing frees
+      // it on garbage collection, so it has to be released here or the daemon leaks one
+      // per dropped client.
+      connection.session?.abandon();
+      connection.session = null;
+      this.#forgetLiveSession(connection);
       this.#connections.delete(connection);
     });
 
@@ -211,8 +229,11 @@ export class DaemonServer {
         if (connection.session !== null && isLive(connection.session)) {
           throw new SessionStateError('this connection already has a session open');
         }
-        if (this.#liveArchives.has(archive.root)) {
-          throw new SessionStateError(`another session is already open on ${archive.root}`);
+        if (this.#liveSession !== null) {
+          throw new SessionStateError(
+            `a session is already open on ${this.#liveSession.archiveRoot} — one conversation ` +
+              `at a time, because there is one of you`,
+          );
         }
 
         const modeId = request.mode ?? connection.mode?.id;
@@ -223,9 +244,10 @@ export class DaemonServer {
           identity: this.#requireIdentity(connection),
           model: this.#model,
           modes: this.#modes,
+          index: await this.#indexes.get(archive),
           ...(mode !== undefined ? { mode } : {}),
         });
-        this.#liveArchives.add(archive.root);
+        this.#liveSession = { archiveRoot: archive.root, connection };
         this.#touchIdle(connection);
 
         return {
@@ -249,6 +271,27 @@ export class DaemonServer {
         return { recorded: true };
       }
 
+      case 'session.search': {
+        const session = this.#requireSession(connection);
+        this.#touchIdle(connection);
+        return session.search(request.query);
+      }
+
+      case 'index.status': {
+        const archive = this.#requireArchive(connection);
+        const index = this.#indexes.peek(archive.root);
+        return {
+          stats: index?.stats ?? null,
+          stale: this.#indexes.isStale(archive.root),
+        };
+      }
+
+      case 'index.rebuild': {
+        const archive = this.#requireArchive(connection);
+        this.#indexes.markStale(archive.root);
+        return (await this.#indexes.get(archive)).stats;
+      }
+
       case 'session.end': {
         const session = this.#requireSession(connection);
         this.#clearIdle(connection);
@@ -256,8 +299,12 @@ export class DaemonServer {
       }
 
       case 'session.end.confirm': {
+        const archive = this.#requireArchive(connection);
         const session = this.#requireSession(connection);
         const meta = await session.confirmEnd(request.token);
+        // A finished session is archive content (§1): mark the index stale so the next
+        // search can find what was just said.
+        this.#indexes.markStale(archive.root);
         this.#releaseSession(connection);
         return meta;
       }
@@ -286,6 +333,7 @@ export class DaemonServer {
           title: session?.title ?? null,
           transcript: session?.transcriptPath ?? null,
           model: this.#model.id,
+          lastSearch: session?.lastRetrieval?.searched ?? null,
         };
       }
 
@@ -302,13 +350,18 @@ export class DaemonServer {
     // §5.3: recovery runs at attach, before any session can open. A scratch buffer
     // belonging to a live session is indistinguishable from an orphaned one, so this is
     // the only safe moment to look.
-    const recovery = this.#liveArchives.has(archive.root)
-      ? { crashedSessions: [], promotedBuffers: [], discardedBuffers: [] }
-      : await recoverArchive(archive, { identity });
+    const recovery =
+      this.#liveSession?.archiveRoot === archive.root
+        ? { crashedSessions: [], promotedBuffers: [], discardedBuffers: [] }
+        : await recoverArchive(archive, { identity });
 
     connection.archive = archive;
     connection.identity = identity;
     connection.mode = modeId === undefined ? null : await loadMode(modeId);
+
+    // Built here, after recovery, so a session promoted out of a crashed buffer is
+    // searchable in the very session that recovered it.
+    const index = await this.#indexes.get(archive);
 
     return {
       archive: archive.root,
@@ -317,13 +370,18 @@ export class DaemonServer {
       model: this.#model.id,
       modes: this.#modes.map((mode) => mode.id),
       recovery,
+      index: index.stats,
     };
   }
 
   #releaseSession(connection: Connection): void {
     this.#clearIdle(connection);
-    if (connection.archive !== null) this.#liveArchives.delete(connection.archive.root);
+    this.#forgetLiveSession(connection);
     connection.session = null;
+  }
+
+  #forgetLiveSession(connection: Connection): void {
+    if (this.#liveSession?.connection === connection) this.#liveSession = null;
   }
 
   /** §5.3 idle path: prompt to confirm, never close on the timer alone. */

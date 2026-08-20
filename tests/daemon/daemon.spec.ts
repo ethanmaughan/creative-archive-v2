@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -98,7 +98,7 @@ describe('daemon + text adapter', () => {
     client.close();
   });
 
-  it('refuses to open a second session on the same archive', async () => {
+  it('refuses a second session on the same archive', async () => {
     await start();
     const first = await CoreClient.connect(server.path);
     const second = await CoreClient.connect(server.path);
@@ -109,6 +109,47 @@ describe('daemon + text adapter', () => {
 
     await first.request({ type: 'session.begin' });
     await expect(second.request({ type: 'session.begin' })).rejects.toThrow(/already open/);
+
+    first.close();
+    second.close();
+  });
+
+  it('refuses a second session on a different archive too — there is one of you', async () => {
+    // The limit is per person, not per archive. Two conversations at once about different
+    // things is not something a human does, whichever archives they are in.
+    const other = join(sandbox.dir, 'archive-two');
+    mkdirSync(join(other, '.git'), { recursive: true });
+    writeFileSync(
+      join(sandbox.stateDir, 'archives.yaml'),
+      `archives:\n  - ${sandbox.archiveRoot}\n  - ${other}\n`,
+      'utf8',
+    );
+
+    await start();
+    const first = await CoreClient.connect(server.path);
+    const second = await CoreClient.connect(server.path);
+    await first.request({ type: 'attach', archive: sandbox.archiveRoot, mode: 'tutor' });
+    await second.request({ type: 'attach', archive: other, mode: 'tutor' });
+
+    await first.request({ type: 'session.begin' });
+    await expect(second.request({ type: 'session.begin' })).rejects.toThrow(/one of you/);
+
+    first.close();
+    second.close();
+  });
+
+  it('frees the slot once the session ends, on any archive', async () => {
+    await start();
+    const first = await CoreClient.connect(server.path);
+    await first.request({ type: 'attach', archive: sandbox.archiveRoot, mode: 'tutor' });
+    await first.request({ type: 'session.begin' });
+    await first.request({ type: 'session.say', text: 'brief' });
+    const end = await first.request<{ token: string }>({ type: 'session.end' });
+    await first.request({ type: 'session.end.confirm', token: end.token });
+
+    const second = await CoreClient.connect(server.path);
+    await second.request({ type: 'attach', archive: sandbox.archiveRoot, mode: 'tutor' });
+    await expect(second.request({ type: 'session.begin' })).resolves.toBeDefined();
 
     first.close();
     second.close();

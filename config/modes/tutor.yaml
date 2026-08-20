@@ -1,13 +1,12 @@
 # Mode manifest (§3). A mode is a config file, not code — adding one is a commit.
 #
-# `tools` lists only what step 1 implements. `retrieve` belongs here and lands with
-# structural retrieval (step 2); the loader rejects it today rather than accepting a
-# declaration it would silently ignore.
+# `tools` lists only what the core implements. The loader rejects anything it cannot
+# honour yet rather than accepting a declaration it would silently ignore.
 id: tutor
 label: Tutor
 prompt_fragment: prompts/modes/tutor.md
 scope:
   read: ['**']
   write: ['sessions/**']
-tools: [footnote, session_end]
+tools: [retrieve, footnote, session_end]
 session_template: templates/tutor-session.md

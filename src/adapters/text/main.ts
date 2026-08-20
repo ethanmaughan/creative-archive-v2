@@ -39,11 +39,16 @@ client.onEvent((event) => {
 const attached = await call<{
   identity: { name: string; personality: string };
   recovery: Recovery;
+  index: { documents: number; spans: number; buildMs: number; generation: number };
 }>({ type: 'attach', archive, ...(mode !== undefined ? { mode } : {}) });
 if (attached !== null) {
   reportRecovery(attached.recovery);
   console.log(
     `attached to ${archive} as ${attached.identity.name} (${attached.identity.personality})`,
+  );
+  console.log(
+    `indexed ${attached.index.documents} document(s), ${attached.index.spans} span(s) in ` +
+      `${attached.index.buildMs} ms (generation ${attached.index.generation})`,
   );
 }
 
@@ -54,7 +59,7 @@ const begun = await call<{ greeting: string }>({
 if (begun !== null) console.log(`\n${begun.greeting}`);
 
 console.log(
-  '\n(/footnote <text>, /end, /abort, /name <x>, /personality <x>, /status, /quit)\n',
+  '\n(/search <query>, /footnote <text>, /end, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
 );
 
 // Open stdin only now that attach and begin have finished. readline starts consuming its
@@ -102,6 +107,44 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       }
       return false;
 
+    case 'search': {
+      if (argument.length === 0) {
+        console.log('  /search needs a query — try: pivots tag:linalg after:2026-01');
+        return false;
+      }
+      const result = await call<SearchResult>({ type: 'session.search', query: argument });
+      if (result === null) return false;
+
+      console.log(`  searched: ${result.searched.filters}`);
+      console.log(
+        `  scope ${result.searched.scope.join(', ')} · generation ${result.searched.generation} · ` +
+          `${result.searched.candidateSpans} candidate span(s) · ${result.searched.matchMode}`,
+      );
+      if (result.searched.ignored.length > 0) {
+        console.log(`  ignored: ${result.searched.ignored.join(', ')}`);
+      }
+      if (result.spans.length === 0) {
+        console.log('  nothing matched');
+        return false;
+      }
+      result.spans.forEach((span, position) => {
+        const where = span.heading === null ? span.title : `${span.title} › ${span.heading}`;
+        const stamp = span.date === null ? span.provenance : `${span.provenance}, ${span.date}`;
+        console.log(`\n  [${position + 1}] ${span.deepLink}`);
+        console.log(`      ${where} (${stamp})`);
+        console.log(`      matched [${span.matched.join(', ')}] score ${span.score}`);
+        console.log(`      ${span.text.replace(/\n/g, '\n      ')}`);
+      });
+      console.log('');
+      return false;
+    }
+
+    case 'index':
+      return printResult(await call({ type: 'index.status' }));
+
+    case 'reindex':
+      return printResult(await call({ type: 'index.rebuild' }));
+
     case 'end': {
       const request = await call<{ token: string; question: string }>({ type: 'session.end' });
       if (request === null) return false;
@@ -130,9 +173,14 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       console.log('  still going');
       return false;
 
-    case 'abort':
-      if ((await call({ type: 'session.abort' })) !== null) console.log('  buffer discarded');
+    case 'abort': {
+      // Only leave if the abort actually happened. Quitting on a refusal would abandon the
+      // very session the core just declined to throw away.
+      const aborted = await call({ type: 'session.abort' });
+      if (aborted === null) return false;
+      console.log('  buffer discarded');
       return true;
+    }
 
     case 'name':
       return printResult(await call({ type: 'identity.set', name: argument }));
@@ -164,6 +212,27 @@ function printResult(result: unknown): boolean {
   if (result !== null)
     console.log(`  ${JSON.stringify(result, null, 2).replaceAll('\n', '\n  ')}`);
   return false;
+}
+
+interface SearchResult {
+  spans: Array<{
+    deepLink: string;
+    title: string;
+    heading: string | null;
+    provenance: string;
+    date: string | null;
+    text: string;
+    score: number;
+    matched: string[];
+  }>;
+  searched: {
+    filters: string;
+    scope: string[];
+    generation: number;
+    candidateSpans: number;
+    matchMode: string;
+    ignored: string[];
+  };
 }
 
 interface Recovery {
