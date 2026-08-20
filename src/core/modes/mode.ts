@@ -8,7 +8,7 @@ import { ConfigInvalid, CoreError } from '../errors.ts';
 import type { Scope } from '../storage/scoped-file-store.ts';
 
 /** Tools the core actually implements today. */
-export const IMPLEMENTED_TOOLS = ['retrieve', 'footnote', 'session_end'] as const;
+export const IMPLEMENTED_TOOLS = ['retrieve', 'mark', 'footnote', 'session_end'] as const;
 
 /**
  * Tools the spec assigns to a mode manifest that a later step implements. Naming one is a

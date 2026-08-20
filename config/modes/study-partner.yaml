@@ -4,5 +4,5 @@ prompt_fragment: prompts/modes/study-partner.md
 scope:
   read: ['**']
   write: ['sessions/**']
-tools: [retrieve, footnote, session_end]
+tools: [retrieve, mark, footnote, session_end]
 session_template: templates/study-partner-session.md

@@ -40,6 +40,7 @@ const attached = await call<{
   identity: { name: string; personality: string };
   recovery: Recovery;
   index: { documents: number; spans: number; buildMs: number; generation: number };
+  legend: { source: string; markers: Array<{ phrase: string; id: string }> };
 }>({ type: 'attach', archive, ...(mode !== undefined ? { mode } : {}) });
 if (attached !== null) {
   reportRecovery(attached.recovery);
@@ -50,6 +51,11 @@ if (attached !== null) {
     `indexed ${attached.index.documents} document(s), ${attached.index.spans} span(s) in ` +
       `${attached.index.buildMs} ms (generation ${attached.index.generation})`,
   );
+  if (attached.legend.markers.length > 0) {
+    console.log(
+      `markers: ${attached.legend.markers.map((marker) => `"${marker.phrase}"`).join(', ')}`,
+    );
+  }
 }
 
 const begun = await call<{ greeting: string }>({
@@ -59,7 +65,7 @@ const begun = await call<{ greeting: string }>({
 if (begun !== null) console.log(`\n${begun.greeting}`);
 
 console.log(
-  '\n(/search <query>, /footnote <text>, /end, /derive, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
+  '\n(/search <query>, /footnote <text>, /legend, /end, /derive, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
 );
 
 // Open stdin only now that attach and begin have finished. readline starts consuming its
@@ -78,13 +84,21 @@ for await (const raw of rl) {
       const [command, ...rest] = line.slice(1).split(' ');
       if (await handleCommand(command ?? '', rest.join(' ').trim())) break;
     } else {
-      const said = await call<{ reply: string; committed: boolean; sessionId: string | null }>({
-        type: 'session.say',
-        text: line,
-      });
+      const said = await call<{
+        reply: string;
+        committed: boolean;
+        sessionId: string | null;
+        marker?: { id: string; note: string };
+      }>({ type: 'session.say', text: line });
       if (said !== null) {
-        if (said.committed) console.log(`  [session ${said.sessionId}]`);
-        console.log(`\n${said.reply}\n`);
+        if (said.marker !== undefined) {
+          // Markers fire silently and are never confirmed (§5.6). This one line is an echo
+          // for a typist, not a confirmation — nothing is waiting on it.
+          console.log(`  ⟨${said.marker.id}⟩\n`);
+        } else {
+          if (said.committed) console.log(`  [session ${said.sessionId}]`);
+          console.log(`\n${said.reply}\n`);
+        }
       }
     }
   }
@@ -226,6 +240,9 @@ async function handleCommand(command: string, argument: string): Promise<boolean
 
     case 'modes':
       return printResult(await call({ type: 'modes.list' }));
+
+    case 'legend':
+      return printResult(await call({ type: 'legend.list' }));
 
     case 'quit':
       return true;

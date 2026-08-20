@@ -8,5 +8,5 @@ prompt_fragment: prompts/modes/tutor.md
 scope:
   read: ['**']
   write: ['sessions/**']
-tools: [retrieve, footnote, session_end]
+tools: [retrieve, mark, footnote, session_end]
 session_template: templates/tutor-session.md
