@@ -40,12 +40,21 @@ function isDerivedLayer(path: string): boolean {
   );
 }
 
-/** `ingest/<id>/source/<file>` — the original, whatever its extension. */
-function ingestSource(path: string): { id: string; filename: string } | null {
+/**
+ * `ingest/<id>/source/<file>`, or `ingest/solutions/<id>/source/<file>` for the partition
+ * (§5.5). The original, whatever its extension.
+ */
+function ingestSource(path: string): { id: string; solutions: boolean } | null {
   const parts = path.split('/');
-  if (parts.length !== 4) return null;
-  if (parts[0] !== INGEST_DIR || parts[2] !== INGEST_SOURCE_DIR) return null;
-  return { id: parts[1]!, filename: parts[3]! };
+  if (parts[0] !== INGEST_DIR) return null;
+
+  if (parts.length === 4 && parts[2] === INGEST_SOURCE_DIR) {
+    return { id: parts[1]!, solutions: false };
+  }
+  if (parts.length === 5 && parts[1] === 'solutions' && parts[3] === INGEST_SOURCE_DIR) {
+    return { id: parts[2]!, solutions: true };
+  }
+  return null;
 }
 
 export interface ScanResult {
@@ -103,7 +112,7 @@ export async function scanArchive(store: FileStore): Promise<ScanResult> {
       ? await readSession(store, path, raw)
       : ingested === null
         ? readNote(path, raw)
-        : await readIngested(store, path, raw, ingested.id);
+        : await readIngested(store, path, raw, ingested.id, ingested.solutions);
 
     if (document !== null) documents.push(document);
   }
@@ -216,12 +225,15 @@ async function readIngested(
   path: string,
   raw: string,
   id: string,
+  solutions: boolean,
 ): Promise<IndexedDocument | null> {
   const spans = headingSpans(path, raw, 1);
   if (spans.length === 0) return null;
 
   let meta: Record<string, unknown> = {};
-  const metaPath = `${INGEST_DIR}/${id}/${INGEST_META}`;
+  const metaPath = solutions
+    ? `${INGEST_DIR}/solutions/${id}/${INGEST_META}`
+    : `${INGEST_DIR}/${id}/${INGEST_META}`;
   if (await store.exists(metaPath)) {
     try {
       const parsed: unknown = parse(await store.read(metaPath));

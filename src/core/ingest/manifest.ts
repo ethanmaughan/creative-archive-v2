@@ -18,6 +18,19 @@ export const INGEST_DIR = 'ingest';
 export const INGEST_META = 'meta.yaml';
 export const INGEST_SOURCE_DIR = 'source';
 
+/**
+ * §5.5's solutions partition, as a subtree.
+ *
+ * The flag has to be expressible as a path for a mode's `deny` list to name it — metadata a
+ * glob cannot see would leave the file itself readable while only retrieval respected the
+ * flag. Textbook answer keys, worked examples and solutions manuals land here; `tutor` cannot
+ * read it and `review` can.
+ */
+export const SOLUTIONS_DIR = `${INGEST_DIR}/solutions`;
+
+/** The glob a mode denies to stay out of the partition. */
+export const SOLUTIONS_GLOB = `${SOLUTIONS_DIR}/**`;
+
 /** §10.1. `notes` is what you pick when you do not know — never guess upward. */
 export const INGEST_TYPES = ['worked-problem', 'reference', 'notes', 'artifact'] as const;
 
@@ -53,16 +66,20 @@ const ManifestSchema = z
 
 export type IngestManifest = z.infer<typeof ManifestSchema>;
 
-export function ingestDir(id: string): string {
-  return `${INGEST_DIR}/${id}`;
+export function ingestDir(id: string, containsSolutions = false): string {
+  return containsSolutions ? `${SOLUTIONS_DIR}/${id}` : `${INGEST_DIR}/${id}`;
 }
 
-export function ingestMetaPath(id: string): string {
-  return `${ingestDir(id)}/${INGEST_META}`;
+export function ingestMetaPath(id: string, containsSolutions = false): string {
+  return `${ingestDir(id, containsSolutions)}/${INGEST_META}`;
 }
 
-export function ingestSourcePath(id: string, filename: string): string {
-  return `${ingestDir(id)}/${INGEST_SOURCE_DIR}/${filename}`;
+export function ingestSourcePath(
+  id: string,
+  filename: string,
+  containsSolutions = false,
+): string {
+  return `${ingestDir(id, containsSolutions)}/${INGEST_SOURCE_DIR}/${filename}`;
 }
 
 export async function writeIngestManifest(
@@ -74,14 +91,18 @@ export async function writeIngestManifest(
     '# Ingested material (§5.5). `source/` is the original and is never modified; anything\n' +
     '# derived from it is regenerable. Type, subject and authored date were declared, not\n' +
     '# inferred (§10.1).\n';
-  await store.write(ingestMetaPath(validated.id), header + stringify(validated));
+  await store.write(
+    ingestMetaPath(validated.id, validated.contains_solutions),
+    header + stringify(validated),
+  );
 }
 
 export async function readIngestManifest(
   store: FileStore,
   id: string,
+  containsSolutions = false,
 ): Promise<IngestManifest> {
-  const path = ingestMetaPath(id);
+  const path = ingestMetaPath(id, containsSolutions);
   const parsed = ManifestSchema.safeParse(parse(await store.read(path)) ?? {});
   if (!parsed.success) {
     const detail = parsed.error.issues

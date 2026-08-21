@@ -1,5 +1,5 @@
 import type { Mode } from '../modes/mode.ts';
-import { matchesAnyGlob } from '../storage/glob.ts';
+import { scopePermitsRead } from '../storage/scoped-file-store.ts';
 import type { Provenance } from './document.ts';
 import type { ArchiveIndex, MatchMode } from './index.ts';
 import { describeQuery, parseQuery } from './query.ts';
@@ -39,6 +39,8 @@ export interface SearchedRecord {
   readonly filters: string;
   readonly ignored: readonly string[];
   readonly scope: readonly string[];
+  /** Paths held out of this mode regardless of scope — §5.5's partition, where it applies. */
+  readonly denied: readonly string[];
   readonly generation: number;
   readonly documentsInArchive: number;
   readonly candidateSpans: number;
@@ -77,7 +79,7 @@ export function retrieve(
   const query = parseQuery(queryText);
   const exclude = options.exclude;
   const permit = (path: string): boolean =>
-    matchesAnyGlob(mode.scope.read, path) && (exclude === undefined || !exclude(path));
+    scopePermitsRead(mode.scope, path) && (exclude === undefined || !exclude(path));
 
   // §3.2's tiers are not yet a distinction: tier 1 is the user's own notes and prior
   // sessions, which is everything the index currently holds, and tier 2 is ingested
@@ -110,6 +112,7 @@ export function retrieve(
       filters: describeQuery(query),
       ignored: query.ignored,
       scope: mode.scope.read,
+      denied: mode.scope.deny ?? [],
       generation: index.generation,
       documentsInArchive: index.documents,
       candidateSpans: outcome.candidates,
@@ -133,7 +136,9 @@ export function retrieve(
 export function describeSearch(record: SearchedRecord): string {
   const parts = [
     `searched ${record.documentsInArchive} document(s) for ${record.filters}`,
-    `scope ${record.scope.join(', ')}`,
+    record.denied.length === 0
+      ? `scope ${record.scope.join(', ')}`
+      : `scope ${record.scope.join(', ')} minus ${record.denied.join(', ')}`,
     `index generation ${record.generation}`,
   ];
   if (record.candidateSpans === 0 && record.terms.length > 0) {

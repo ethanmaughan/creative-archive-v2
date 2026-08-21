@@ -106,12 +106,21 @@ describe('ingest (§5.5, §10.1)', () => {
     expect(result.manifest.verified).toBe(false);
   });
 
-  it('refuses the solutions flag while the partition it routes to does not exist', async () => {
-    // Accepting it would file material as protected while leaving it readable — a claimed
-    // protection is worse than an absent one.
-    await expect(add({ containsSolutions: true })).rejects.toThrow(
-      /cannot be honoured yet.*not built/s,
+  it('files flagged material into the solutions partition (§5.5)', async () => {
+    const result = await add({ containsSolutions: true });
+
+    expect(result.partitioned).toBe(true);
+    expect(result.manifest.contains_solutions).toBe(true);
+    expect(result.wrote[0]).toBe(`ingest/solutions/${result.manifest.id}/source/pset4.md`);
+    expect(await archive.store.exists(`ingest/${result.manifest.id}/source/pset4.md`)).toBe(
+      false,
     );
+  });
+
+  it('keeps ids unique across both trees, since an id is a deep link', async () => {
+    const open = await add();
+    const flagged = await add({ containsSolutions: true });
+    expect(flagged.manifest.id).not.toBe(open.manifest.id);
   });
 
   it('gives a second item on the same day its own id, and never reuses one', async () => {

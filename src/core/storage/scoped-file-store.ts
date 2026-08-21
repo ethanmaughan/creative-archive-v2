@@ -10,6 +10,39 @@ import {
 export interface Scope {
   readonly read: readonly string[];
   readonly write: readonly string[];
+  /**
+   * Checked before `read` and `write`, and it wins.
+   *
+   * §5.5 needs material flagged as containing solutions to be unreadable by `tutor` and
+   * readable by `review`. An allow-list of globs cannot express "everything except this",
+   * and enumerating the rest would mean a mode losing access to any directory added later.
+   * One deny list, evaluated first, expresses the partition with the machinery already here
+   * — and because it sits at the same chokepoint, it covers file reads and retrieval alike.
+   */
+  readonly deny?: readonly string[];
+}
+
+/**
+ * Deny wins. A path listed in `deny` is out of scope no matter what `read`/`write` allow.
+ *
+ * Allow narrowly, deny broadly: a deny of `a/**` also denies `a` itself, which an allow of
+ * `a/**` deliberately does not grant. The asymmetry is the point. Granting a subtree should
+ * not hand over the directory entry as well — but denying one and still permitting a listing
+ * of it lets a mode read the ids and titles inside a partition it cannot open, which is most
+ * of what the partition was hiding.
+ */
+export function scopeDenies(scope: Scope, path: string): boolean {
+  if (scope.deny === undefined) return false;
+  if (matchesAnyGlob(scope.deny, path)) return true;
+
+  return scope.deny.some(
+    (pattern) => pattern.endsWith('/**') && path === pattern.slice(0, -'/**'.length),
+  );
+}
+
+/** Whether a mode may read this path at all — the predicate retrieval filters on. */
+export function scopePermitsRead(scope: Scope, path: string): boolean {
+  return !scopeDenies(scope, path) && matchesAnyGlob(scope.read, path);
 }
 
 /**
@@ -20,7 +53,7 @@ export interface Scope {
  */
 export function assertScopeRead(scope: Scope, modeId: string, path: string): string {
   const normalized = normalizeArchivePath(path);
-  if (!matchesAnyGlob(scope.read, normalized)) {
+  if (!scopePermitsRead(scope, normalized)) {
     throw new ScopeViolation('read', normalized, modeId);
   }
   return normalized;
@@ -28,7 +61,7 @@ export function assertScopeRead(scope: Scope, modeId: string, path: string): str
 
 export function assertScopeWrite(scope: Scope, modeId: string, path: string): string {
   const normalized = normalizeArchivePath(path);
-  if (!matchesAnyGlob(scope.write, normalized)) {
+  if (scopeDenies(scope, normalized) || !matchesAnyGlob(scope.write, normalized)) {
     throw new ScopeViolation('write', normalized, modeId);
   }
   return normalized;

@@ -207,6 +207,31 @@ file on an explicit instruction is what ingest _is_, not a capability that persi
 
 Cost to change: low.
 
+### D-016 — Scope gains a deny list, and deny is broader than allow
+
+`scope.deny` is checked before `read`/`write` and wins. §5.5 needs material flagged as
+containing solutions to be unreadable by `tutor` and readable by `review`; an allow-list of
+globs cannot express "everything except this", and enumerating the rest would mean a mode
+losing access to any directory added later.
+
+Because the deny list sits at the same chokepoint as every other read (D-007), it covers file
+reads and retrieval with one rule. That is what made the partition a small change rather than a
+subsystem — and it is why the flag routes material into a _subtree_ (`ingest/solutions/`) rather
+than living purely as metadata: a glob cannot see metadata, so a metadata-only flag would leave
+the file readable while only retrieval respected it.
+
+**Allow narrowly, deny broadly.** A deny of `a/**` also denies `a` itself, which an allow of
+`a/**` deliberately does not grant. The asymmetry is deliberate: granting a subtree should not
+hand over the directory entry as well, but denying one while still permitting a listing of it
+lets a mode read the ids and titles inside a partition it cannot open — most of what the
+partition was hiding. Found by a test that expected the listing to be refused and discovered it
+was not.
+
+Every search reports what was held out, so a tutor that finds nothing can tell a partition
+boundary from an empty archive.
+
+Cost to change: low, and the deny list is optional — `review` simply omits it.
+
 ### D-014 — The index is rebuilt on demand, not watched
 
 One index per archive, held by a registry. Closing a session marks it stale; the next caller
