@@ -18,10 +18,14 @@ export const IMPLEMENTED_TOOLS = ['retrieve', 'mark', 'footnote', 'session_end']
  */
 export const DEFERRED_TOOLS: Record<string, string> = {};
 
-const ScopeSchema = z.object({
-  read: z.array(z.string().min(1)),
-  write: z.array(z.string().min(1)),
-});
+const ScopeSchema = z
+  .object({
+    read: z.array(z.string().min(1)),
+    write: z.array(z.string().min(1)),
+    /** Checked first and wins — how §5.5's solutions partition is kept out of a mode. */
+    deny: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
 
 const ModeSchema = z
   .object({
@@ -125,7 +129,11 @@ export async function loadModeFile(path: string): Promise<Mode> {
     id: manifest.id,
     label: manifest.label,
     promptFragmentPath,
-    scope: { read: manifest.scope.read, write: manifest.scope.write },
+    scope: {
+      read: manifest.scope.read,
+      write: manifest.scope.write,
+      ...(manifest.scope.deny !== undefined ? { deny: manifest.scope.deny } : {}),
+    },
     tools: manifest.tools,
     sessionTemplatePath,
   };

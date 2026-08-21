@@ -42,6 +42,8 @@ export interface IngestResult {
    * flag records that its parse output, whenever it exists, is not to be believed yet.
    */
   readonly needsVerification: boolean;
+  /** Filed into the solutions partition (§5.5), where `tutor` cannot reach it. */
+  readonly partitioned: boolean;
 }
 
 const TEXT_EXTENSIONS = new Set([
@@ -89,16 +91,6 @@ export async function ingestFile(
     throw new CoreError('ingest_subject', 'subject is required and is not inferred (§10.1)');
   }
 
-  // The solutions partition is what makes this flag mean anything, and it does not exist yet.
-  // Accepting the flag now would file material as protected while leaving it readable.
-  if (request.containsSolutions === true) {
-    throw new CoreError(
-      'ingest_partition',
-      'contains_solutions cannot be honoured yet — the retrieval partition it routes to ' +
-        '(§5.5) is not built, so setting it would claim a protection that does not exist',
-    );
-  }
-
   const absolute = resolve(request.sourcePath);
   if (!existsSync(absolute) || !statSync(absolute).isFile()) {
     throw new CoreError('ingest_source', `'${absolute}' is not a file`);
@@ -117,8 +109,12 @@ export async function ingestFile(
     );
   }
 
+  // §5.5: when unsure, set the flag. A false positive costs one retrieval tier; a false
+  // negative quietly defeats the no-solutions contract (§3.2).
+  const containsSolutions = request.containsSolutions ?? false;
+
   const id = uniqueId(archive, request.authoredOn, filename);
-  const sourcePath = ingestSourcePath(id, filename);
+  const sourcePath = ingestSourcePath(id, filename, containsSolutions);
 
   // Read then write, rather than a filesystem copy: the content goes through the store, so
   // the archive is the only place this process writes.
@@ -132,7 +128,7 @@ export async function ingestFile(
     source: filename,
     scanned,
     verified: false,
-    contains_solutions: false,
+    contains_solutions: containsSolutions,
     ingested_at: new Date().toISOString(),
     parsed_at: null,
     links: [...(request.links ?? [])],
@@ -141,19 +137,25 @@ export async function ingestFile(
 
   return {
     manifest,
-    wrote: [sourcePath, `${ingestDir(id)}/meta.yaml`],
+    wrote: [sourcePath, `${ingestDir(id, containsSolutions)}/meta.yaml`],
     needsVerification: scanned,
+    partitioned: containsSolutions,
   };
 }
 
 /** Ids are never reused and never renamed, so a second item on one day gets a suffix. */
 function uniqueId(archive: Archive, authoredOn: string, filename: string): string {
   const base = ingestId(authoredOn, filename);
-  if (!existsSync(archive.store.resolve(ingestDir(base)))) return base;
+  const taken = (id: string): boolean =>
+    // Checked in both trees: an id is a deep link, and the same id meaning two things
+    // depending on which subtree you look in would make those links ambiguous.
+    existsSync(archive.store.resolve(ingestDir(id, false))) ||
+    existsSync(archive.store.resolve(ingestDir(id, true)));
 
+  if (!taken(base)) return base;
   for (let attempt = 2; attempt < 100; attempt += 1) {
     const candidate = `${base}-${attempt}`;
-    if (!existsSync(archive.store.resolve(ingestDir(candidate)))) return candidate;
+    if (!taken(candidate)) return candidate;
   }
   throw new CoreError('ingest_id', `cannot find a free id for '${base}'`);
 }
