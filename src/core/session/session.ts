@@ -35,13 +35,17 @@ export interface SessionDeps {
   /** Pre-selected mode. When absent, intake resolves it from the first utterance (§5.1). */
   readonly mode?: Mode;
   /**
-   * Snapshot of the archive index (§8). A snapshot is correct rather than convenient: the
-   * only thing changing during a session is this session's own transcript, and those turns
-   * are already in the model's context. The registry rebuilds between sessions.
+   * How to reach the current archive index (§8).
+   *
+   * A provider rather than a snapshot. This was a snapshot until ingest existed, on the
+   * argument that the only file changing during a session was that session's own transcript —
+   * whose turns are already in the model's context. Ingest broke that: material brought in
+   * mid-session was invisible to the session that brought it in, which is the one session
+   * most likely to want it (D-014).
    *
    * Absent means no retrieval, and the prompt says so instead of letting the agent guess.
    */
-  readonly index?: ArchiveIndex;
+  readonly index?: () => Promise<ArchiveIndex>;
   /**
    * The annotation vocabulary (§5.6). Absent means no marker can fire, which is a legible
    * state — an archive with no legend simply has no markers, and derivation falls back to
@@ -212,15 +216,28 @@ export class Session {
    * would leave §3.1 groundedness unenforceable, since an agent that cannot search cannot
    * honestly report what the archive does or does not hold.
    */
-  #retrieveFor(utterance: string): RetrievalResult | null {
-    const index = this.#deps.index;
-    if (index === undefined) return null;
+  async #retrieveFor(utterance: string): Promise<RetrievalResult | null> {
+    const provider = this.#deps.index;
+    if (provider === undefined) return null;
 
     const mode = this.#requireMode();
     if (!mode.tools.includes('retrieve')) return null;
 
-    this.#lastRetrieval = retrieve(index, mode, utterance);
+    this.#lastRetrieval = retrieve(await provider(), mode, utterance, this.#retrieveOptions());
     return this.#lastRetrieval;
+  }
+
+  /**
+   * This session is held out of its own searches. The index is built from the files as they
+   * are, so the utterance being answered is already in it — and a query drawn from that
+   * utterance matches it better than anything else could, which put the user's own question
+   * at the top of its own results.
+   */
+  #retrieveOptions(): { exclude?: (path: string) => boolean } {
+    const id = this.#id;
+    if (id === null) return {};
+    const prefix = `${sessionDir(id)}/`;
+    return { exclude: (path: string): boolean => path.startsWith(prefix) };
   }
 
   /** What the last turn actually searched, for a caller that wants to show its work. */
@@ -229,14 +246,14 @@ export class Session {
   }
 
   /** The `retrieve` tool, invoked directly — the adapter's way of inspecting the index. */
-  search(queryText: string): RetrievalResult {
-    const index = this.#deps.index;
-    if (index === undefined) {
+  async search(queryText: string): Promise<RetrievalResult> {
+    const provider = this.#deps.index;
+    if (provider === undefined) {
       throw new SessionStateError('this archive has no index (retrieval is unavailable)');
     }
     const mode = this.#requireMode();
     assertToolAllowed(mode, 'retrieve');
-    return retrieve(index, mode, queryText);
+    return retrieve(await provider(), mode, queryText, this.#retrieveOptions());
   }
 
   /**
@@ -253,7 +270,7 @@ export class Session {
 
   async #respond(utterance: string): Promise<string> {
     const mode = this.#requireMode();
-    const retrieval = this.#retrieveFor(utterance);
+    const retrieval = await this.#retrieveFor(utterance);
 
     const { prompt } = await buildSystemPrompt({
       archiveRoot: this.#deps.archive.root,

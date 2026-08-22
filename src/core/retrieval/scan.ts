@@ -1,5 +1,6 @@
 import { parse } from 'yaml';
 import { ARCHIVE_INTERNAL_DIR } from '../config/paths.ts';
+import { INGEST_DIR, INGEST_META, INGEST_SOURCE_DIR } from '../ingest/manifest.ts';
 import { META_FILE } from '../session/meta.ts';
 import { TRANSCRIPT_FILE, parseTranscript } from '../session/transcript.ts';
 import type { FileStore } from '../storage/file-store.ts';
@@ -33,7 +34,18 @@ const SKIP_DIRS = new Set([ARCHIVE_INTERNAL_DIR, '.git', 'node_modules']);
  * Nothing is lost from retrieval: the transcript the summary was derived from is indexed.
  */
 function isDerivedLayer(path: string): boolean {
-  return path.startsWith('sessions/') && path.endsWith('/session.md');
+  return (
+    (path.startsWith('sessions/') && path.endsWith('/session.md')) ||
+    (path.startsWith(`${INGEST_DIR}/`) && path.endsWith('/parsed.md'))
+  );
+}
+
+/** `ingest/<id>/source/<file>` — the original, whatever its extension. */
+function ingestSource(path: string): { id: string; filename: string } | null {
+  const parts = path.split('/');
+  if (parts.length !== 4) return null;
+  if (parts[0] !== INGEST_DIR || parts[2] !== INGEST_SOURCE_DIR) return null;
+  return { id: parts[1]!, filename: parts[3]! };
 }
 
 export interface ScanResult {
@@ -47,7 +59,7 @@ export async function scanArchive(store: FileStore): Promise<ScanResult> {
   const skipped: string[] = [];
   let filesRead = 0;
 
-  const markdown: string[] = [];
+  const paths: string[] = [];
   const queue = ['.'];
 
   while (queue.length > 0) {
@@ -69,11 +81,14 @@ export async function scanArchive(store: FileStore): Promise<ScanResult> {
         if (!SKIP_DIRS.has(name)) queue.push(entry.path);
         continue;
       }
-      if (name.endsWith('.md') && !isDerivedLayer(entry.path)) markdown.push(entry.path);
+      if (isDerivedLayer(entry.path)) continue;
+      // Ingested originals are indexed whatever they are named: material brought in as .txt
+      // or .py is exactly as searchable as material brought in as .md.
+      if (name.endsWith('.md') || ingestSource(entry.path) !== null) paths.push(entry.path);
     }
   }
 
-  for (const path of markdown.sort()) {
+  for (const path of paths.sort()) {
     filesRead += 1;
     let raw: string;
     try {
@@ -83,9 +98,12 @@ export async function scanArchive(store: FileStore): Promise<ScanResult> {
       continue;
     }
 
+    const ingested = ingestSource(path);
     const document = path.endsWith(`/${TRANSCRIPT_FILE}`)
       ? await readSession(store, path, raw)
-      : readNote(path, raw);
+      : ingested === null
+        ? readNote(path, raw)
+        : await readIngested(store, path, raw, ingested.id);
 
     if (document !== null) documents.push(document);
   }
@@ -188,6 +206,45 @@ async function readSession(
   };
 }
 
+/**
+ * An ingested original (§5.5), described by its declared manifest rather than by anything
+ * inferred from the file. Its own frontmatter is left alone — the file is not ours to read as
+ * configuration, only to index.
+ */
+async function readIngested(
+  store: FileStore,
+  path: string,
+  raw: string,
+  id: string,
+): Promise<IndexedDocument | null> {
+  const spans = headingSpans(path, raw, 1);
+  if (spans.length === 0) return null;
+
+  let meta: Record<string, unknown> = {};
+  const metaPath = `${INGEST_DIR}/${id}/${INGEST_META}`;
+  if (await store.exists(metaPath)) {
+    try {
+      const parsed: unknown = parse(await store.read(metaPath));
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        meta = parsed as Record<string, unknown>;
+      }
+    } catch {
+      // A corrupt manifest costs the item its declared metadata, not its searchability.
+    }
+  }
+
+  return {
+    path,
+    provenance: 'ingest',
+    title: stringField(meta, 'subject') ?? basename(path),
+    date: dateField(meta) ?? null,
+    tags: stringArrayField(meta, 'tags'),
+    mode: null,
+    agent: null,
+    spans,
+  };
+}
+
 /** Split a body at markdown headings. Text before the first heading is its own span. */
 export function headingSpans(path: string, body: string, startLine: number): Span[] {
   const lines = body.split('\n');
@@ -251,7 +308,7 @@ function stringArrayField(data: Record<string, unknown>, key: string): string[] 
 
 /** `date`, or a session's `started_at`, normalized to YYYY-MM-DD for range queries. */
 function dateField(data: Record<string, unknown>): string | null {
-  for (const key of ['date', 'started_at', 'created']) {
+  for (const key of ['date', 'authored_on', 'started_at', 'created']) {
     const value = data[key];
     if (typeof value === 'string') {
       const match = /^\d{4}-\d{2}-\d{2}/.exec(value);

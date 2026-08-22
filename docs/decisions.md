@@ -185,19 +185,49 @@ apply here and expensive to retrofit later.
 Cost to change: low. When tool calling lands, the automatic pass becomes a fallback or is
 dropped; `retrieve` is already gated by `mode.tools`.
 
+### D-015 — Ingest declares, and refuses what it cannot honour
+
+Type, subject and authored date are declared at ingest and never inferred (§10.1). A worked
+problem set and a set of reference notes are the same shape to a classifier and completely
+different to a tutor, and guessing wrong is silent — so there is no inference to fall back on,
+and the error names `notes` as the answer when you do not know.
+
+Two refusals rather than silent half-support. A format nothing here can read is refused instead
+of filed as an empty item; nothing in this build does OCR or document extraction. And
+`contains_solutions` is refused outright until the retrieval partition it routes to exists,
+because filing material as protected while leaving it readable is worse than not offering the
+flag.
+
+Scanned material can still be filed — the original is kept and marked unverified, per §10.2 —
+it simply has no text to index yet.
+
+The file is copied once, through the store, from a path the user names. The agent never learns
+where it came from, and ingest grants no standing read outside the archive: reading one named
+file on an explicit instruction is what ingest _is_, not a capability that persists after it.
+
+Cost to change: low.
+
 ### D-014 — The index is rebuilt on demand, not watched
 
 One index per archive, held by a registry. Closing a session marks it stale; the next caller
 pays for the rebuild. No file watcher, no background rebuild, no timer.
 
-During a session the only file changing is that session's own transcript, and those turns are
-already in the model's context — so a snapshot taken at session start is correct rather than
-merely convenient. What does change is that a _finished_ session becomes searchable, which is
-what makes §1's "sessions become new archive content" real. Rebuilding in the background at
-close would make `session.end` either slow or racy for a benefit nobody can observe.
+**Revised at ingest.** This originally handed a session a _snapshot_ taken when it began, on
+the argument that the only file changing during a session was that session's own transcript,
+whose turns are already in the model's context. Ingest falsified the premise: material brought
+in mid-session was invisible to the session that brought it in — the one session most likely to
+want it. A session now reads the current index through a provider.
 
-An edit made to the archive by hand mid-session is therefore invisible until a rebuild;
-`index.rebuild` forces one.
+That exposed the other half. With a live index, the utterance being answered is _in_ the index,
+and a query drawn from that utterance matches it better than anything else can — so retrieval
+was handing the agent the question it had just been asked, ranked above the material that
+answered it. A live session is therefore held out of its own search, which is where the
+original reasoning was right: those turns are already in context, so nothing is lost.
+
+A _finished_ session becoming searchable is still what makes §1's "sessions become new archive
+content" real. Rebuilding in the background at close would still make `session.end` either
+slow or racy for a benefit nobody can observe, so that part stands. An edit made by hand
+elsewhere is picked up on the next rebuild; `index.rebuild` forces one.
 
 Cost to change: low — a watcher would call `markStale`.
 
@@ -211,16 +241,12 @@ irreversible actions, listener idle behavior.
 
 Raised by this build and needing a decision:
 
-- **The solutions partition is not expressible.** §5.5 requires material flagged
-  `contains_solutions` to be unreadable by `tutor` and readable by `review`. Scope is an
-  allow-list of globs with no negation, so "everything except this partition" cannot be
-  written. Step 4 needs either a `deny` list in the scope shape or a partition directory
-  excluded by construction. Until then all four modes ship identical scopes and scope is
-  not yet doing discriminating work in production.
-- **`session_template` is accepted but unconsumed.** Manifests declare it and the loader
-  checks the file exists, but nothing reads it until the derivation pass (step 3). This is
-  the one place D-010 was not applied, on the grounds that churning four manifests at step
-  3 is worse than an existence-checked forward reference.
+- **The solutions partition (§5.5) is next, and no longer looks like a blocker.** It was
+  written up twice here as needing a decision about scope negation. Re-reading §5.5, the answer
+  is a `deny` list on scope, checked before the allow list: same glob machinery, one rule, and
+  it covers both file reads and retrieval through the chokepoint that already exists.
+  `contains_solutions` is refused at ingest until that lands, rather than accepted and quietly
+  unenforced. Until then all four modes ship identical scopes.
 - **Tool calling.** `tools` gates core operations invoked over the protocol; the model is
   still not given tool calling. When it is, the gate is already in the right place, but the
   model needs a description of each tool that does not leak into the transcript, and D-013's

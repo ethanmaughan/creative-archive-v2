@@ -3,6 +3,7 @@ import { mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { openArchive, type Archive } from '../archive/archive.ts';
 import { deriveSession } from '../derive/derive.ts';
+import { ingestFile } from '../ingest/ingest.ts';
 import { socketPath } from '../config/paths.ts';
 import { CoreError, SessionStateError } from '../errors.ts';
 import { loadIdentity, saveIdentity, type Identity } from '../identity/identity.ts';
@@ -266,7 +267,7 @@ export class DaemonServer {
           identity: this.#requireIdentity(connection),
           model: this.#model,
           modes: this.#modes,
-          index: await this.#indexes.get(archive),
+          index: () => this.#indexes.get(archive),
           ...(connection.legend !== null ? { legend: connection.legend } : {}),
           ...(mode !== undefined ? { mode } : {}),
         });
@@ -297,7 +298,7 @@ export class DaemonServer {
       case 'session.search': {
         const session = this.#requireSession(connection);
         this.#touchIdle(connection);
-        return session.search(request.query);
+        return await session.search(request.query);
       }
 
       case 'session.derive': {
@@ -334,6 +335,23 @@ export class DaemonServer {
         // Derivation rewrites the session's title and tags, both of which are indexed.
         if (report.outcome === 'derived') this.#indexes.markStale(archive.root);
         return report;
+      }
+
+      case 'ingest.add': {
+        const archive = this.#requireArchive(connection);
+        const result = await ingestFile(archive, {
+          sourcePath: request.sourcePath,
+          type: request.ingestType,
+          subject: request.subject,
+          authoredOn: request.authoredOn,
+          ...(request.scanned !== undefined ? { scanned: request.scanned } : {}),
+          ...(request.containsSolutions !== undefined
+            ? { containsSolutions: request.containsSolutions }
+            : {}),
+        });
+        // New material in the archive is new material to search.
+        this.#indexes.markStale(archive.root);
+        return result;
       }
 
       case 'index.status': {

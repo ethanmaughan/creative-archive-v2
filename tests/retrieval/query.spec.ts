@@ -31,8 +31,13 @@ describe('parseQuery', () => {
 
   it('surfaces a whitelisted key with an unusable value', () => {
     expect(parseQuery('after:march').ignored).toEqual(['after:march']);
-    expect(parseQuery('in:ingest').ignored).toEqual(['in:ingest']);
+    expect(parseQuery('in:notebook').ignored).toEqual(['in:notebook']);
     expect(parseQuery('limit:0').ignored).toEqual(['limit:0']);
+  });
+
+  it('accepts ingest as a provenance now that ingested material exists', () => {
+    expect(parseQuery('pivot in:ingest').provenance).toBe('ingest');
+    expect(parseQuery('pivot in:ingest').ignored).toEqual([]);
   });
 
   it('clamps the limit and defaults it', () => {

@@ -65,7 +65,7 @@ const begun = await call<{ greeting: string }>({
 if (begun !== null) console.log(`\n${begun.greeting}`);
 
 console.log(
-  '\n(/search <query>, /footnote <text>, /legend, /end, /derive, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
+  '\n(/search <query>, /footnote <text>, /legend, /ingest, /end, /derive, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
 );
 
 // Open stdin only now that attach and begin have finished. readline starts consuming its
@@ -183,6 +183,41 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       }
       if (report.unresolvedPlaceholders.length > 0) {
         console.log(`  template asked for: ${report.unresolvedPlaceholders.join(', ')}`);
+      }
+      return false;
+    }
+
+    case 'ingest': {
+      // /ingest <path> <type> <YYYY-MM-DD> <subject...>
+      const [path, ingestType, authoredOn, ...subject] = argument.split(' ');
+      if (
+        path === undefined ||
+        ingestType === undefined ||
+        authoredOn === undefined ||
+        subject.length === 0
+      ) {
+        console.log(
+          '  /ingest <file> <worked-problem|reference|notes|artifact> <YYYY-MM-DD> <subject>',
+        );
+        console.log("  if you do not know the type, it is 'notes' — never guess upward");
+        return false;
+      }
+      const result = await call<{
+        manifest: { id: string; type: string };
+        wrote: string[];
+        needsVerification: boolean;
+      }>({
+        type: 'ingest.add',
+        sourcePath: path,
+        ingestType,
+        subject: subject.join(' '),
+        authoredOn,
+      });
+      if (result === null) return false;
+      console.log(`  ${result.manifest.id} (${result.manifest.type})`);
+      console.log(`  ${result.wrote.join(', ')}`);
+      if (result.needsVerification) {
+        console.log('  scanned: verify an extraction before trusting anything derived from it');
       }
       return false;
     }
