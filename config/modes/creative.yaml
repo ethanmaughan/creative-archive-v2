@@ -4,5 +4,8 @@ prompt_fragment: prompts/modes/creative.md
 scope:
   read: ['**']
   write: ['sessions/**']
+  # §5.5: material flagged as containing solutions is out of reach here. Retrievable by
+  # `review`, which is looking back over the record rather than working through a problem.
+  deny: ['ingest/solutions/**']
 tools: [retrieve, mark, footnote, session_end]
 session_template: templates/creative-session.md

@@ -130,8 +130,12 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       if (result === null) return false;
 
       console.log(`  searched: ${result.searched.filters}`);
+      const denied =
+        result.searched.denied.length === 0
+          ? ''
+          : ` minus ${result.searched.denied.join(', ')}`;
       console.log(
-        `  scope ${result.searched.scope.join(', ')} · generation ${result.searched.generation} · ` +
+        `  scope ${result.searched.scope.join(', ')}${denied} · generation ${result.searched.generation} · ` +
           `${result.searched.candidateSpans} candidate span(s) · ${result.searched.matchMode}`,
       );
       if (result.searched.ignored.length > 0) {
@@ -188,8 +192,13 @@ async function handleCommand(command: string, argument: string): Promise<boolean
     }
 
     case 'ingest': {
-      // /ingest <path> <type> <YYYY-MM-DD> <subject...>
-      const [path, ingestType, authoredOn, ...subject] = argument.split(' ');
+      // /ingest [--solutions] [--scanned] <path> <type> <YYYY-MM-DD> <subject...>
+      const words = argument.split(' ').filter((word) => word.length > 0);
+      const solutions = words.includes('--solutions');
+      const scanned = words.includes('--scanned');
+      const [path, ingestType, authoredOn, ...subject] = words.filter(
+        (word) => word !== '--solutions' && word !== '--scanned',
+      );
       if (
         path === undefined ||
         ingestType === undefined ||
@@ -197,25 +206,32 @@ async function handleCommand(command: string, argument: string): Promise<boolean
         subject.length === 0
       ) {
         console.log(
-          '  /ingest <file> <worked-problem|reference|notes|artifact> <YYYY-MM-DD> <subject>',
+          '  /ingest [--solutions] [--scanned] <file> <worked-problem|reference|notes|artifact> <YYYY-MM-DD> <subject>',
         );
         console.log("  if you do not know the type, it is 'notes' — never guess upward");
+        console.log('  --solutions if it contains answers: when unsure, set it (§10.1)');
         return false;
       }
       const result = await call<{
         manifest: { id: string; type: string };
         wrote: string[];
         needsVerification: boolean;
+        partitioned: boolean;
       }>({
         type: 'ingest.add',
         sourcePath: path,
         ingestType,
         subject: subject.join(' '),
         authoredOn,
+        ...(solutions ? { containsSolutions: true } : {}),
+        ...(scanned ? { scanned: true } : {}),
       });
       if (result === null) return false;
       console.log(`  ${result.manifest.id} (${result.manifest.type})`);
       console.log(`  ${result.wrote.join(', ')}`);
+      if (result.partitioned) {
+        console.log('  filed in the solutions partition: tutor cannot read it, review can');
+      }
       if (result.needsVerification) {
         console.log('  scanned: verify an extraction before trusting anything derived from it');
       }
@@ -328,6 +344,7 @@ interface SearchResult {
   searched: {
     filters: string;
     scope: string[];
+    denied: string[];
     generation: number;
     candidateSpans: number;
     matchMode: string;
