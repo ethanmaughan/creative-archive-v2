@@ -47,11 +47,17 @@ describe('invariant: the core does not depend on any adapter', () => {
     expect(reachesCore).toBe(true);
   });
 
-  it('pulls in no audio, speech, or media dependency', () => {
-    const manifest = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')) as {
-      dependencies: Record<string, string>;
-    };
-    expect(Object.keys(manifest.dependencies).sort()).toEqual(['yaml', 'zod']);
+  it('pulls in no audio, speech, or media dependency from core source', () => {
+    // Adapter-level dependencies (sherpa-onnx-node, etc.) live in package.json but the core
+    // must never import them. This check is strictly about what the core reaches, not what
+    // sits in the shared dependency list — adapters are allowed their own imports.
+    const audioPkgs = ['sherpa-onnx-node', 'naudiodon', 'naudiodon2', 'portaudio', 'node-microphone'];
+    for (const path of coreFiles) {
+      const text = readFileSync(path, 'utf8');
+      for (const pkg of audioPkgs) {
+        expect(text.includes(pkg), `${path} references audio package ${pkg}`).toBe(false);
+      }
+    }
   });
 
   it('keeps the protocol free of any audio concept, so one wire serves every adapter', () => {
