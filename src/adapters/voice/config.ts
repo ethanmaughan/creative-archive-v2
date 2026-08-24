@@ -76,8 +76,14 @@ function loadVoiceRegistry(modelsDir: string): VoiceEntry[] {
     label: String(entry['label'] ?? entry['id'] ?? 'unknown'),
     model: resolve(modelsDir, 'tts', String(entry['model'] ?? '')),
     tokens: resolve(modelsDir, 'tts', String(entry['tokens'] ?? '')),
-    dataDir: entry['dataDir'] !== undefined ? resolve(modelsDir, 'tts', String(entry['dataDir'])) : undefined,
-    lexicon: entry['lexicon'] !== undefined ? resolve(modelsDir, 'tts', String(entry['lexicon'])) : undefined,
+    dataDir:
+      entry['dataDir'] !== undefined
+        ? resolve(modelsDir, 'tts', String(entry['dataDir']))
+        : undefined,
+    lexicon:
+      entry['lexicon'] !== undefined
+        ? resolve(modelsDir, 'tts', String(entry['lexicon']))
+        : undefined,
     speakerId: Number(entry['speakerId'] ?? 0),
   }));
 }

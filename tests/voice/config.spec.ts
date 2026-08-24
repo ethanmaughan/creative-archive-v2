@@ -40,13 +40,20 @@ describe('parseArgs', () => {
   it('extracts all flags', () => {
     const models = tempModels();
     const config = parseArgs([
-      'node', 'main.ts',
-      '--archive', '/tmp/a',
-      '--mode', 'tutor',
-      '--voice', 'amy',
-      '--models', models,
-      '--input-device', 'mic1',
-      '--output-device', 'spk1',
+      'node',
+      'main.ts',
+      '--archive',
+      '/tmp/a',
+      '--mode',
+      'tutor',
+      '--voice',
+      'amy',
+      '--models',
+      models,
+      '--input-device',
+      'mic1',
+      '--output-device',
+      'spk1',
     ]);
     expect(config.mode).toBe('tutor');
     expect(config.voice).toBe('amy');

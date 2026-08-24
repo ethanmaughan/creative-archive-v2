@@ -1,7 +1,14 @@
 import { socketPath } from '../../core/config/paths.ts';
 import { CoreClient, CoreError } from '../text/client.ts';
 import { parseArgs, resolveVoice, validateModels } from './config.ts';
-import { createVad, createStt, createTts, type VadEngine, type SttEngine, type TtsEngine } from './engine.ts';
+import {
+  createVad,
+  createStt,
+  createTts,
+  type VadEngine,
+  type SttEngine,
+  type TtsEngine,
+} from './engine.ts';
 import { createMicCapture, createSpeaker, type MicCapture, type Speaker } from './audio.ts';
 import { startPtt, type PttHandle } from './ptt.ts';
 
@@ -87,9 +94,15 @@ client.onEvent((event) => {
 
 const attached = await call<{
   identity: { name: string; personality: string };
-}>({ type: 'attach', archive: config.archive, ...(config.mode !== undefined ? { mode: config.mode } : {}) });
+}>({
+  type: 'attach',
+  archive: config.archive,
+  ...(config.mode !== undefined ? { mode: config.mode } : {}),
+});
 if (attached !== null) {
-  console.log(`attached to ${config.archive} as ${attached.identity.name} (${attached.identity.personality})`);
+  console.log(
+    `attached to ${config.archive} as ${attached.identity.name} (${attached.identity.personality})`,
+  );
 }
 
 const begun = await call<{ greeting: string }>({
@@ -98,7 +111,9 @@ const begun = await call<{ greeting: string }>({
 });
 if (begun !== null) console.log(`\n${begun.greeting}`);
 
-console.log('\npress [SPACE] to start/stop recording. voice commands: "end session", "yes", "no", "quit"');
+console.log(
+  '\npress [SPACE] to start/stop recording. voice commands: "end session", "yes", "no", "quit"',
+);
 console.log(`voice: ${tts.currentVoice()}\n`);
 
 // ── Audio capture pipeline ────────────────────────────────────────────────────
@@ -231,7 +246,9 @@ async function handleVoiceCommand(transcript: string): Promise<boolean> {
       try {
         const audio = tts.synthesize(request.question);
         await speaker.play(audio.samples, audio.sampleRate);
-      } catch { /* fallback to text */ }
+      } catch {
+        /* fallback to text */
+      }
     }
     return true;
   }

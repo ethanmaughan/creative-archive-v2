@@ -51,7 +51,13 @@ describe('invariant: the core does not depend on any adapter', () => {
     // Adapter-level dependencies (sherpa-onnx-node, etc.) live in package.json but the core
     // must never import them. This check is strictly about what the core reaches, not what
     // sits in the shared dependency list — adapters are allowed their own imports.
-    const audioPkgs = ['sherpa-onnx-node', 'naudiodon', 'naudiodon2', 'portaudio', 'node-microphone'];
+    const audioPkgs = [
+      'sherpa-onnx-node',
+      'naudiodon',
+      'naudiodon2',
+      'portaudio',
+      'node-microphone',
+    ];
     for (const path of coreFiles) {
       const text = readFileSync(path, 'utf8');
       for (const pkg of audioPkgs) {

@@ -30,14 +30,23 @@ export function createMicCapture(deviceName?: string): MicCapture {
 
       const inputArgs = buildInputArgs(deviceName);
       // Output: 16 kHz, mono, 16-bit signed little-endian PCM to stdout.
-      proc = spawn('ffmpeg', [
-        '-hide_banner', '-loglevel', 'error',
-        ...inputArgs,
-        '-ar', '16000',
-        '-ac', '1',
-        '-f', 's16le',
-        'pipe:1',
-      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawn(
+        'ffmpeg',
+        [
+          '-hide_banner',
+          '-loglevel',
+          'error',
+          ...inputArgs,
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-f',
+          's16le',
+          'pipe:1',
+        ],
+        { stdio: ['ignore', 'pipe', 'pipe'] },
+      );
 
       proc.stdout!.on('data', (chunk: Buffer) => {
         // Convert 16-bit signed LE PCM to Float32Array in [-1, 1].
@@ -114,15 +123,25 @@ export function createSpeaker(): Speaker {
         }
         const buffer = Buffer.from(int16.buffer);
 
-        proc = spawn('ffplay', [
-          '-hide_banner', '-loglevel', 'error',
-          '-f', 's16le',
-          '-ar', String(sampleRate),
-          '-ac', '1',
-          '-nodisp',
-          '-autoexit',
-          '-i', 'pipe:0',
-        ], { stdio: ['pipe', 'ignore', 'pipe'] });
+        proc = spawn(
+          'ffplay',
+          [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-f',
+            's16le',
+            '-ar',
+            String(sampleRate),
+            '-ac',
+            '1',
+            '-nodisp',
+            '-autoexit',
+            '-i',
+            'pipe:0',
+          ],
+          { stdio: ['pipe', 'ignore', 'pipe'] },
+        );
 
         proc.stderr!.on('data', (data: Buffer) => {
           const msg = data.toString().trim();
