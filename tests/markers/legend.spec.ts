@@ -1,14 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigInvalid } from '../../src/core/errors.ts';
-import { LEGEND_PATH, loadLegend, parseLegend } from '../../src/core/markers/legend.ts';
+import {
+  LEGEND_PATH,
+  loadLegend,
+  parseLegend,
+  tagEntries,
+  controlEntries,
+} from '../../src/core/markers/legend.ts';
 import { matchMarker } from '../../src/core/markers/match.ts';
 import { makeSandbox, type Sandbox } from '../helpers/sandbox.ts';
 
-const VALID = `- phrase: mark known error
+const VALID_TAG = `- phrase: mark known error
   namespace: tag
   id: known-error
   span: forward
   writes: [transcript, error-index]
+`;
+
+const VALID_CONTROL = `- phrase: end session
+  namespace: control
+  id: session-end
+  safety: confirm
 `;
 
 describe('the shipped legend', () => {
@@ -22,24 +34,33 @@ describe('the shipped legend', () => {
     sandbox.cleanup();
   });
 
-  it('is the five tags §5.6 suggests starting with', async () => {
+  it('ships five tags and six control phrases', async () => {
     const archive = await sandbox.open();
     const legend = await loadLegend(archive.store);
 
-    expect(legend.entries.map((entry) => entry.id)).toEqual([
+    expect(tagEntries(legend).map((e) => e.id)).toEqual([
       'known-error',
       'confusion',
       'insight',
       'resolved',
       'revisit',
     ]);
+
+    expect(controlEntries(legend).map((e) => e.id)).toEqual([
+      'session-end',
+      'session-end-alt',
+      'session-abort',
+      'session-abort-alt',
+      'footnote',
+      'search',
+    ]);
   });
 
-  it('leads every phrase with the particle that keeps ordinary speech out', async () => {
+  it('leads every tag phrase with the particle that keeps ordinary speech out', async () => {
     const archive = await sandbox.open();
     const legend = await loadLegend(archive.store);
 
-    for (const entry of legend.entries) {
+    for (const entry of tagEntries(legend)) {
       expect(entry.normalized.startsWith('mark ')).toBe(true);
     }
   });
@@ -62,27 +83,20 @@ describe('the shipped legend', () => {
   });
 });
 
-describe('legend validation', () => {
+describe('tag entry validation', () => {
   const bad =
     (yaml: string): (() => unknown) =>
     (): unknown =>
       parseLegend(yaml, 'probe.yaml');
 
-  it('accepts a well-formed entry', () => {
-    const legend = parseLegend(VALID, 'probe.yaml');
-    expect(legend.entries[0]!.writes).toEqual(['transcript', 'error-index']);
-    expect(legend.entries[0]!.span).toBe('forward');
-  });
-
-  it('refuses the control namespace by name, rather than recording what should act', () => {
-    expect(
-      bad(`- phrase: end the session
-  namespace: control
-  id: session-end
-  span: forward
-  writes: [transcript]
-`),
-    ).toThrow(/namespace 'control' is not implemented yet.*Tier 0/s);
+  it('accepts a well-formed tag entry', () => {
+    const legend = parseLegend(VALID_TAG, 'probe.yaml');
+    const entry = legend.entries[0]!;
+    expect(entry.namespace).toBe('tag');
+    if (entry.namespace === 'tag') {
+      expect(entry.writes).toEqual(['transcript', 'error-index']);
+      expect(entry.span).toBe('forward');
+    }
   });
 
   it('refuses paired spans by name', () => {
@@ -119,9 +133,9 @@ describe('legend validation', () => {
   });
 
   it('refuses duplicate ids and duplicate phrases', () => {
-    expect(bad(`${VALID}${VALID}`)).toThrow(/duplicate/);
+    expect(bad(`${VALID_TAG}${VALID_TAG}`)).toThrow(/duplicate/);
     expect(
-      bad(`${VALID}- phrase: Mark  Known   Error
+      bad(`${VALID_TAG}- phrase: Mark  Known   Error
   namespace: tag
   id: other
   span: forward
@@ -158,9 +172,102 @@ describe('legend validation', () => {
   });
 });
 
+describe('control entry validation', () => {
+  const bad =
+    (yaml: string): (() => unknown) =>
+    (): unknown =>
+      parseLegend(yaml, 'probe.yaml');
+
+  it('accepts a well-formed control entry with safety', () => {
+    const legend = parseLegend(VALID_CONTROL, 'probe.yaml');
+    const entry = legend.entries[0]!;
+    expect(entry.namespace).toBe('control');
+    if (entry.namespace === 'control') {
+      expect(entry.safety).toBe('confirm');
+    }
+  });
+
+  it('accepts captures: rest on control entries', () => {
+    const legend = parseLegend(
+      `- phrase: footnote
+  namespace: control
+  id: footnote
+  safety: safe
+  captures: rest
+`,
+      'probe.yaml',
+    );
+    const entry = legend.entries[0]!;
+    expect(entry.namespace).toBe('control');
+    if (entry.namespace === 'control') {
+      expect(entry.captures).toBe('rest');
+      expect(entry.safety).toBe('safe');
+    }
+  });
+
+  it('refuses an unknown safety classification', () => {
+    expect(
+      bad(`- phrase: do thing
+  namespace: control
+  id: thing
+  safety: yolo
+`),
+    ).toThrow(/unknown safety 'yolo'/);
+  });
+
+  it('refuses an unknown captures value', () => {
+    expect(
+      bad(`- phrase: do thing
+  namespace: control
+  id: thing
+  safety: safe
+  captures: first-word
+`),
+    ).toThrow(/unknown captures 'first-word'/);
+  });
+
+  it('refuses control entry with tag fields (span, writes)', () => {
+    expect(
+      bad(`- phrase: end session
+  namespace: control
+  id: session-end
+  safety: confirm
+  span: forward
+`),
+    ).toThrow(ConfigInvalid);
+  });
+
+  it('refuses tag entry with control fields (safety)', () => {
+    expect(
+      bad(`- phrase: mark thing
+  namespace: tag
+  id: thing
+  span: forward
+  writes: [transcript]
+  safety: safe
+`),
+    ).toThrow(ConfigInvalid);
+  });
+
+  it('refuses phrases that duplicate across namespaces', () => {
+    expect(
+      bad(`- phrase: mark thing
+  namespace: tag
+  id: tag-thing
+  span: forward
+  writes: [transcript]
+- phrase: mark thing
+  namespace: control
+  id: ctrl-thing
+  safety: safe
+`),
+    ).toThrow(/duplicate phrase/);
+  });
+});
+
 describe('matching a marker in something said', () => {
   const legend = parseLegend(
-    `${VALID}- phrase: mark
+    `${VALID_TAG}- phrase: mark
   namespace: tag
   id: bare
   span: forward
@@ -184,7 +291,6 @@ describe('matching a marker in something said', () => {
   });
 
   it('accepts whatever punctuation introduces the note', () => {
-    // Requiring a literal space filed all of these under the shorter `mark` marker.
     for (const said of [
       'mark known error: the sign flip',
       'mark known error — the sign flip',
@@ -220,5 +326,13 @@ describe('matching a marker in something said', () => {
 
   it('returns nothing against an empty legend', () => {
     expect(matchMarker('mark known error', { source: 'none', entries: [] })).toBeNull();
+  });
+
+  it('filters by namespace when requested', () => {
+    const mixed = parseLegend(`${VALID_TAG}${VALID_CONTROL}`, 'probe.yaml');
+    expect(matchMarker('mark known error', mixed, 'tag')?.entry.id).toBe('known-error');
+    expect(matchMarker('mark known error', mixed, 'control')).toBeNull();
+    expect(matchMarker('end session', mixed, 'control')?.entry.id).toBe('session-end');
+    expect(matchMarker('end session', mixed, 'tag')).toBeNull();
   });
 });

@@ -64,5 +64,10 @@ export function markedTurns(spans: readonly MarkedSpan[]): Set<number> {
 
 /** Markers the legend routes to the shared error index (§5.4, §5.5 — one index, three sources). */
 export function indexedSpans(spans: readonly MarkedSpan[]): MarkedSpan[] {
-  return spans.filter((span) => span.entry?.writes.includes('error-index') === true);
+  return spans.filter(
+    (span) =>
+      span.entry !== null &&
+      span.entry.namespace === 'tag' &&
+      span.entry.writes.includes('error-index'),
+  );
 }

@@ -40,3 +40,39 @@
   id: revisit
   span: forward
   writes: [transcript, error-index]
+
+# Control phrases (Tier 0, §2.3). These do things; tags record things.
+# Every control phrase is classified: `safe` fires immediately, `confirm` asks first.
+# Session end is always `confirm` (§5.3).
+
+- phrase: end session
+  namespace: control
+  id: session-end
+  safety: confirm
+
+- phrase: end the session
+  namespace: control
+  id: session-end-alt
+  safety: confirm
+
+- phrase: abort
+  namespace: control
+  id: session-abort
+  safety: confirm
+
+- phrase: abort session
+  namespace: control
+  id: session-abort-alt
+  safety: confirm
+
+- phrase: footnote
+  namespace: control
+  id: footnote
+  safety: safe
+  captures: rest
+
+- phrase: search for
+  namespace: control
+  id: search
+  safety: safe
+  captures: rest

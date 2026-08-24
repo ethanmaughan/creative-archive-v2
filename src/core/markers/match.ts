@@ -1,4 +1,4 @@
-import { normalizePhrase, type Legend, type LegendEntry } from './legend.ts';
+import { normalizePhrase, type Legend, type LegendEntry, type Namespace } from './legend.ts';
 
 /**
  * Recognizing a marker in something the user said (§5.6).
@@ -41,14 +41,27 @@ function patternFor(entry: LegendEntry): RegExp {
   return pattern;
 }
 
-export function matchMarker(utterance: string, legend: Legend): MarkerMatch | null {
+/**
+ * Match an utterance against legend entries, optionally filtered by namespace.
+ *
+ * When `namespace` is provided, only entries of that namespace are considered. This lets
+ * session.say() restrict to `'tag'` so control phrases never accidentally fire as markers,
+ * and the voice adapter restrict to `'control'` for Tier 0 phrase matching.
+ */
+export function matchMarker(
+  utterance: string,
+  legend: Legend,
+  namespace?: Namespace,
+): MarkerMatch | null {
   const trimmed = utterance.trim();
   if (trimmed.length === 0) return null;
 
   // Longest phrase first, so a general marker cannot shadow a more specific one.
-  const candidates = [...legend.entries].sort(
-    (a, b) => b.normalized.length - a.normalized.length,
-  );
+  let candidates = [...legend.entries];
+  if (namespace !== undefined) {
+    candidates = candidates.filter((e) => e.namespace === namespace);
+  }
+  candidates.sort((a, b) => b.normalized.length - a.normalized.length);
 
   for (const entry of candidates) {
     const match = patternFor(entry).exec(trimmed);
