@@ -1,4 +1,6 @@
 import { socketPath } from '../../core/config/paths.ts';
+import { matchControl } from '../../core/markers/control.ts';
+import type { Legend } from '../../core/markers/legend.ts';
 import { CoreClient, CoreError } from '../text/client.ts';
 import { parseArgs, resolveVoice, validateModels } from './config.ts';
 import {
@@ -94,15 +96,58 @@ client.onEvent((event) => {
 
 const attached = await call<{
   identity: { name: string; personality: string };
+  legend: { source: string; markers: Array<Record<string, unknown>> };
 }>({
   type: 'attach',
   archive: config.archive,
   ...(config.mode !== undefined ? { mode: config.mode } : {}),
 });
+
+// Reconstruct a Legend from the attach response so we can match control phrases locally.
+let adapterLegend: Legend = { source: 'none', entries: [] };
 if (attached !== null) {
   console.log(
     `attached to ${config.archive} as ${attached.identity.name} (${attached.identity.personality})`,
   );
+}
+
+// Load the full legend (including control entries) from the core.
+const legendData = await call<{
+  source: string;
+  markers: Array<{
+    phrase: string;
+    id: string;
+    namespace?: string;
+    safety?: string;
+    captures?: string;
+    span?: string;
+    writes?: string[];
+  }>;
+}>({ type: 'legend.list' });
+if (legendData !== null) {
+  adapterLegend = {
+    source: legendData.source,
+    entries: legendData.markers.map((m) => {
+      if (m.namespace === 'control') {
+        return {
+          phrase: m.phrase,
+          normalized: m.phrase.trim().toLowerCase().replace(/\s+/g, ' '),
+          namespace: 'control' as const,
+          id: m.id,
+          safety: (m.safety ?? 'safe') as 'safe' | 'confirm',
+          ...(m.captures !== undefined ? { captures: m.captures as 'rest' } : {}),
+        };
+      }
+      return {
+        phrase: m.phrase,
+        normalized: m.phrase.trim().toLowerCase().replace(/\s+/g, ' '),
+        namespace: 'tag' as const,
+        id: m.id,
+        span: (m.span ?? 'forward') as 'forward',
+        writes: (m.writes ?? ['transcript']) as Array<'transcript' | 'error-index'>,
+      };
+    }),
+  };
 }
 
 const begun = await call<{ greeting: string }>({
@@ -205,10 +250,17 @@ const ptt: PttHandle = startPtt({
 
 // ── Voice commands ────────────────────────────────────────────────────────────
 
+/**
+ * Tier 0 phrase dispatch (§2.3): control phrases from the legend, plus adapter-local commands.
+ *
+ * Control phrases are matched from the legend's control namespace — deterministic, sub-second,
+ * no LLM. Adapter-local commands (voice switching, quit, yes/no confirmation) stay hardcoded
+ * because they are not archive vocabulary.
+ */
 async function handleVoiceCommand(transcript: string): Promise<boolean> {
   const lower = transcript.toLowerCase().trim();
 
-  // During confirmation, only accept yes/no.
+  // ── Adapter-local: confirmation responses (UX, not phrases) ─────────────
   if (state === 'confirming' || pendingEndToken !== null) {
     if (lower === 'yes' || lower === 'yeah' || lower === 'confirm') {
       if (pendingEndToken !== null) {
@@ -235,56 +287,7 @@ async function handleVoiceCommand(transcript: string): Promise<boolean> {
     }
   }
 
-  if (lower === 'end session' || lower === 'end the session') {
-    const request = await call<{ token: string; question: string }>({ type: 'session.end' });
-    if (request !== null) {
-      pendingEndToken = request.token;
-      setState('confirming');
-      console.log(`  ${request.question} (say "yes" or "no")`);
-
-      // Speak the confirmation question.
-      try {
-        const audio = tts.synthesize(request.question);
-        await speaker.play(audio.samples, audio.sampleRate);
-      } catch {
-        /* fallback to text */
-      }
-    }
-    return true;
-  }
-
-  if (lower === 'abort' || lower === 'abort session') {
-    const aborted = await call({ type: 'session.abort' });
-    if (aborted !== null) {
-      console.log('  buffer discarded');
-      await shutdown();
-    }
-    return true;
-  }
-
-  if (lower.startsWith('footnote ')) {
-    const text = transcript.slice('footnote '.length).trim();
-    if (text.length > 0) {
-      if ((await call({ type: 'session.footnote', text })) !== null) {
-        console.log('  noted');
-      }
-    }
-    setState('idle');
-    return true;
-  }
-
-  if (lower.startsWith('search for ')) {
-    const query = transcript.slice('search for '.length).trim();
-    if (query.length > 0) {
-      const result = await call({ type: 'session.search', query });
-      if (result !== null) {
-        console.log(`  search: ${JSON.stringify(result, null, 2).replaceAll('\n', '\n  ')}`);
-      }
-    }
-    setState('idle');
-    return true;
-  }
-
+  // ── Adapter-local: voice switching and quit ─────────────────────────────
   if (lower.startsWith('switch voice to ')) {
     const voiceId = lower.slice('switch voice to '.length).trim();
     const entry = resolveVoice(config, voiceId);
@@ -305,7 +308,80 @@ async function handleVoiceCommand(transcript: string): Promise<boolean> {
     return true;
   }
 
-  return false;
+  // ── Tier 0: registry-driven control phrases from the legend ─────────────
+  const match = matchControl(transcript, adapterLegend);
+  if (match === null) return false;
+
+  if (match.entry.safety === 'confirm') {
+    return dispatchConfirm(match.entry.id);
+  }
+  return dispatchSafe(match.entry.id, match.argument);
+}
+
+/** Dispatch a `confirm` control phrase: initiate and wait for yes/no. */
+async function dispatchConfirm(id: string): Promise<boolean> {
+  switch (id) {
+    case 'session-end':
+    case 'session-end-alt': {
+      const request = await call<{ token: string; question: string }>({
+        type: 'session.end',
+      });
+      if (request !== null) {
+        pendingEndToken = request.token;
+        setState('confirming');
+        console.log(`  ${request.question} (say "yes" or "no")`);
+        try {
+          const audio = tts.synthesize(request.question);
+          await speaker.play(audio.samples, audio.sampleRate);
+        } catch {
+          /* fallback to text */
+        }
+      }
+      return true;
+    }
+    case 'session-abort':
+    case 'session-abort-alt': {
+      const aborted = await call({ type: 'session.abort' });
+      if (aborted !== null) {
+        console.log('  buffer discarded');
+        await shutdown();
+      }
+      return true;
+    }
+    default:
+      console.log(`  unknown confirm command: ${id}`);
+      setState('idle');
+      return true;
+  }
+}
+
+/** Dispatch a `safe` control phrase: fire immediately. */
+async function dispatchSafe(id: string, argument: string): Promise<boolean> {
+  switch (id) {
+    case 'footnote': {
+      if (argument.length > 0) {
+        if ((await call({ type: 'session.footnote', text: argument })) !== null) {
+          console.log('  noted');
+        }
+      }
+      setState('idle');
+      return true;
+    }
+    case 'search': {
+      if (argument.length > 0) {
+        const result = await call({ type: 'session.search', query: argument });
+        if (result !== null) {
+          console.log(`  search: ${JSON.stringify(result, null, 2).replaceAll('\n', '\n  ')}`);
+        }
+      }
+      setState('idle');
+      return true;
+    }
+    default:
+      console.log(`  unknown safe command: ${id}`);
+      setState('idle');
+      return true;
+  }
 }
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

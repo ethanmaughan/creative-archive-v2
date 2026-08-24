@@ -265,7 +265,7 @@ export class Session {
     const legend = this.#deps.legend;
     if (legend === undefined || this.#state !== 'open') return null;
     if (!this.#requireMode().tools.includes('mark')) return null;
-    return matchMarker(text, legend);
+    return matchMarker(text, legend, 'tag');
   }
 
   async #respond(utterance: string): Promise<string> {

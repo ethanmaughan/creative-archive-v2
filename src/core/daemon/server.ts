@@ -215,12 +215,24 @@ export class DaemonServer {
         if (legend === null) throw new CoreError('not_attached', 'attach to an archive first');
         return {
           source: legend.source,
-          markers: legend.entries.map((entry) => ({
-            phrase: entry.phrase,
-            id: entry.id,
-            span: entry.span,
-            writes: entry.writes,
-          })),
+          markers: legend.entries.map((entry) => {
+            if (entry.namespace === 'control') {
+              return {
+                phrase: entry.phrase,
+                id: entry.id,
+                namespace: entry.namespace,
+                safety: entry.safety,
+                ...(entry.captures !== undefined ? { captures: entry.captures } : {}),
+              };
+            }
+            return {
+              phrase: entry.phrase,
+              id: entry.id,
+              namespace: entry.namespace,
+              span: entry.span,
+              writes: [...entry.writes],
+            };
+          }),
         };
       }
 
@@ -452,11 +464,12 @@ export class DaemonServer {
       index: index.stats,
       legend: {
         source: connection.legend.source,
-        markers: connection.legend.entries.map((entry) => ({
-          phrase: entry.phrase,
-          id: entry.id,
-          writes: entry.writes,
-        })),
+        markers: connection.legend.entries
+          .filter((entry) => entry.namespace === 'tag')
+          .map((entry) => ({
+            phrase: entry.phrase,
+            id: entry.id,
+          })),
       },
     };
   }
