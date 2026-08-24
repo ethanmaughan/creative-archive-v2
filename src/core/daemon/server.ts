@@ -2,6 +2,7 @@ import { createServer, type Server, type Socket } from 'node:net';
 import { mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { openArchive, type Archive } from '../archive/archive.ts';
+import { backfillDerivation } from '../derive/backfill.ts';
 import { deriveSession } from '../derive/derive.ts';
 import { ingestFile } from '../ingest/ingest.ts';
 import { socketPath } from '../config/paths.ts';
@@ -13,6 +14,7 @@ import { resolveModelClient } from '../model/resolve.ts';
 import { listModes, loadMode, type Mode } from '../modes/mode.ts';
 import { IndexRegistry } from '../retrieval/registry.ts';
 import { readMeta } from '../session/meta.ts';
+import { isSessionId } from '../session/session-id.ts';
 import { recoverArchive } from '../session/recovery.ts';
 import { GREETING, Session } from '../session/session.ts';
 import {
@@ -347,6 +349,70 @@ export class DaemonServer {
         // Derivation rewrites the session's title and tags, both of which are indexed.
         if (report.outcome === 'derived') this.#indexes.markStale(archive.root);
         return report;
+      }
+
+      case 'session.derive.batch': {
+        const archive = this.#requireArchive(connection);
+        if (connection.session !== null) {
+          throw new SessionStateError(
+            'close the current session before running batch derivation',
+          );
+        }
+
+        const result = await backfillDerivation({
+          archive,
+          model: this.#model,
+          ...(connection.legend !== null ? { legend: connection.legend } : {}),
+          filter: {
+            mode: request.mode,
+            after: request.after,
+            underivedOnly: request.underivedOnly,
+          },
+        });
+
+        if (result.derived > 0) this.#indexes.markStale(archive.root);
+        return result;
+      }
+
+      case 'session.list': {
+        const archive = this.#requireArchive(connection);
+        const sessionsExist = await archive.store.exists('sessions');
+        if (!sessionsExist) return { sessions: [] };
+
+        const entries = await archive.store.list('sessions');
+        const sessionIds = entries
+          .filter((e) => e.kind === 'dir' && isSessionId(e.path.split('/').pop()!))
+          .map((e) => e.path.split('/').pop()!)
+          .sort();
+
+        const sessions: Array<{
+          id: string;
+          title: string;
+          mode: string | null;
+          startedAt: string;
+          derivedAt: string | null;
+          tags: string[];
+        }> = [];
+
+        for (const id of sessionIds) {
+          try {
+            const meta = await readMeta(archive.store, id);
+            if (request.mode !== undefined && meta.mode !== request.mode) continue;
+            if (request.after !== undefined && meta.started_at < request.after) continue;
+            sessions.push({
+              id,
+              title: meta.title,
+              mode: meta.mode,
+              startedAt: meta.started_at,
+              derivedAt: meta.derived_at,
+              tags: meta.tags,
+            });
+          } catch {
+            continue; // corrupt meta — skip
+          }
+        }
+
+        return { sessions };
       }
 
       case 'ingest.add': {
