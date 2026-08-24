@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 import { z } from 'zod';
 import { configRoot } from '../config/paths.ts';
 import { ConfigInvalid, CoreError } from '../errors.ts';
+import { validateCapabilityCombinations, type Capabilities } from '../capabilities/validate.ts';
 import type { Scope } from '../storage/scoped-file-store.ts';
 
 /** Tools the core actually implements today. */
@@ -27,6 +28,35 @@ const ScopeSchema = z
   })
   .strict();
 
+// ── Capabilities (§6.3) ───────────────────────────────────────────────────────
+
+const ExecuteSchema = z.union([
+  z.literal(false),
+  z.object({ cwd: z.string().min(1), network: z.boolean() }).strict(),
+]);
+
+const ModelCallSchema = z.union([
+  z.literal(false),
+  z.object({ budget_usd_session: z.number().positive() }).strict(),
+]);
+
+const WebFetchSchema = z.union([
+  z.literal(false),
+  z.object({ read_only: z.boolean() }).strict(),
+]);
+
+const CapabilitiesSchema = z
+  .object({
+    fs_read: z.array(z.string().min(1)).optional(),
+    fs_write: z.array(z.string().min(1)).optional(),
+    execute: ExecuteSchema.optional(),
+    model_call: ModelCallSchema.optional(),
+    web_fetch: WebFetchSchema.optional(),
+  })
+  .strict();
+
+// ── Mode schema ───────────────────────────────────────────────────────────────
+
 const ModeSchema = z
   .object({
     id: z.string().min(1),
@@ -35,6 +65,7 @@ const ModeSchema = z
     scope: ScopeSchema,
     tools: z.array(z.string().min(1)),
     session_template: z.string().min(1).optional(),
+    capabilities: CapabilitiesSchema.optional(),
   })
   .strict();
 
@@ -49,15 +80,16 @@ export interface Mode {
    * but not consumed until the derivation pass (step 3).
    */
   readonly sessionTemplatePath: string | null;
+  /** Executor-level capability grants (§6.3). Empty object when not declared. */
+  readonly capabilities: Capabilities;
 }
 
 /**
  * Deferred sections of the spec that a manifest may not declare yet. Rejecting these is the
- * same discipline as DEFERRED_TOOLS: a `capabilities` block that nothing enforces reads as
- * a granted capability, and the whole point of §6.3 is that declared capability is real.
+ * same discipline as DEFERRED_TOOLS: a block that nothing enforces reads as a granted
+ * capability, and the whole point of the design is that declared capability is real.
  */
 const DEFERRED_KEYS: Record<string, string> = {
-  capabilities: 'the capability manifest (§6.3, build order step 8)',
   legend: 'markers and the legend (§5.6, build order steps 3 and 6)',
 };
 
@@ -125,6 +157,11 @@ export async function loadModeFile(path: string): Promise<Mode> {
     }
   }
 
+  const capabilities: Capabilities = manifest.capabilities ?? {};
+
+  // §6.4 guardrails: validate dangerous capability combinations.
+  validateCapabilityCombinations(capabilities, path);
+
   return {
     id: manifest.id,
     label: manifest.label,
@@ -136,6 +173,7 @@ export async function loadModeFile(path: string): Promise<Mode> {
     },
     tools: manifest.tools,
     sessionTemplatePath,
+    capabilities,
   };
 }
 

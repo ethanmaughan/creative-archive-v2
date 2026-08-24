@@ -13,3 +13,9 @@ scope:
   deny: ['ingest/solutions/**']
 tools: [retrieve, mark, footnote, session_end]
 session_template: templates/tutor-session.md
+capabilities:
+  fs_read: ['<archive>/**']
+  fs_write: ['sessions/**']
+  execute: false
+  model_call: { budget_usd_session: 1.00 }
+  web_fetch: false
