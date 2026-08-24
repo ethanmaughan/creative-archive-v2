@@ -11,6 +11,7 @@
   "scripts": {
     "daemon": "node src/core/daemon/main.ts",
     "text": "node src/adapters/text/main.ts",
+    "voice": "node src/adapters/voice/main.ts",
     "typecheck": "tsc",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -21,6 +22,7 @@
     "verify": "prettier --check . && tsc && eslint . && vitest run"
   },
   "dependencies": {
+    "sherpa-onnx-node": "^1.13.6",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },

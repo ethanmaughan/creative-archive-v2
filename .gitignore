@@ -3,3 +3,6 @@ node_modules/
 
 # Local scratch archives used by hand while developing. Test archives live in tmp.
 /scratch/
+
+# Voice adapter models (large binaries, downloaded per-machine).
+/models/
