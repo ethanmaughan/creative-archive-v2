@@ -46,6 +46,17 @@ export const RequestSchema = z.discriminatedUnion('type', [
     scanned: z.boolean().optional(),
     containsSolutions: z.boolean().optional(),
   }),
+  z.object({
+    type: z.literal('session.derive.batch'),
+    mode: z.string().min(1).optional(),
+    after: z.string().min(1).optional(),
+    underivedOnly: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal('session.list'),
+    mode: z.string().min(1).optional(),
+    after: z.string().min(1).optional(),
+  }),
   z.object({ type: z.literal('index.status') }),
   z.object({ type: z.literal('index.rebuild') }),
   z.object({ type: z.literal('session.end') }),

@@ -65,7 +65,7 @@ const begun = await call<{ greeting: string }>({
 if (begun !== null) console.log(`\n${begun.greeting}`);
 
 console.log(
-  '\n(/search <query>, /footnote <text>, /legend, /ingest, /end, /derive, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
+  '\n(/search <query>, /footnote <text>, /legend, /ingest, /end, /derive [all|sessionId], /sessions, /abort, /name <x>, /personality <x>, /index, /status, /quit)\n',
 );
 
 // Open stdin only now that attach and begin have finished. readline starts consuming its
@@ -158,6 +158,34 @@ async function handleCommand(command: string, argument: string): Promise<boolean
     }
 
     case 'derive': {
+      // /derive all [--force]  — batch derivation
+      // /derive after:<date>   — batch with date filter
+      // /derive mode:<id>      — batch with mode filter
+      // /derive [sessionId]    — single session (existing behavior)
+      const words = argument.split(' ').filter((w) => w.length > 0);
+      if (words[0] === 'all' || argument.startsWith('after:') || argument.startsWith('mode:')) {
+        const force = words.includes('--force');
+        const modeFilter = words.find((w) => w.startsWith('mode:'))?.slice(5);
+        const afterFilter = words.find((w) => w.startsWith('after:'))?.slice(6);
+
+        const batch = await call<BatchReport>({
+          type: 'session.derive.batch',
+          ...(modeFilter !== undefined ? { mode: modeFilter } : {}),
+          ...(afterFilter !== undefined ? { after: afterFilter } : {}),
+          ...(!force ? { underivedOnly: true } : {}),
+        });
+        if (batch === null) return false;
+
+        console.log(
+          `  ${batch.derived} derived, ${batch.skipped} skipped, ${batch.failed} failed ` +
+            `(${batch.total} total)`,
+        );
+        for (const err of batch.errors) {
+          console.log(`  ! ${err.sessionId}: ${err.error}`);
+        }
+        return false;
+      }
+
       const report = await call<DerivationReport>({
         type: 'session.derive',
         ...(argument.length > 0 ? { sessionId: argument } : {}),
@@ -188,6 +216,39 @@ async function handleCommand(command: string, argument: string): Promise<boolean
       if (report.unresolvedPlaceholders.length > 0) {
         console.log(`  template asked for: ${report.unresolvedPlaceholders.join(', ')}`);
       }
+      return false;
+    }
+
+    case 'sessions': {
+      const result = await call<{
+        sessions: Array<{
+          id: string;
+          title: string;
+          mode: string | null;
+          startedAt: string;
+          derivedAt: string | null;
+          tags: string[];
+        }>;
+      }>({
+        type: 'session.list',
+        ...(argument.startsWith('mode:') ? { mode: argument.slice(5) } : {}),
+        ...(argument.startsWith('after:') ? { after: argument.slice(6) } : {}),
+      });
+      if (result === null) return false;
+
+      if (result.sessions.length === 0) {
+        console.log('  no sessions');
+        return false;
+      }
+      for (const s of result.sessions) {
+        const derived = s.derivedAt !== null ? '✓' : ' ';
+        const tags = s.tags.length > 0 ? ` [${s.tags.join(', ')}]` : '';
+        console.log(`  ${derived} ${s.id}  ${s.title}  (${s.mode ?? 'no mode'})${tags}`);
+      }
+      console.log(
+        `\n  ${result.sessions.length} session(s), ` +
+          `${result.sessions.filter((s) => s.derivedAt !== null).length} derived`,
+      );
       return false;
     }
 
@@ -314,6 +375,14 @@ function printResult(result: unknown): boolean {
   if (result !== null)
     console.log(`  ${JSON.stringify(result, null, 2).replaceAll('\n', '\n  ')}`);
   return false;
+}
+
+interface BatchReport {
+  total: number;
+  derived: number;
+  skipped: number;
+  failed: number;
+  errors: Array<{ sessionId: string; error: string }>;
 }
 
 interface DerivationReport {
