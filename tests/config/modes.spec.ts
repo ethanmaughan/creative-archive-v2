@@ -39,6 +39,14 @@ describe('shipped mode manifests', () => {
     }
   });
 
+  it('declares capabilities on every shipped mode', async () => {
+    for (const mode of await listModes()) {
+      expect(mode.capabilities).toBeDefined();
+      expect(mode.capabilities.execute).toBe(false);
+      expect(mode.capabilities.web_fetch).toBe(false);
+    }
+  });
+
   it('names the available modes when asked for one that does not exist', async () => {
     await expect(loadMode('philosopher')).rejects.toThrow(/unknown mode 'philosopher'.*tutor/s);
     await expect(loadMode('philosopher')).rejects.toThrow(CoreError);
@@ -79,8 +87,6 @@ describe('mode manifest validation', () => {
   });
 
   it('rejects a tool the core does not implement, rather than ignoring it', async () => {
-    // DEFERRED_TOOLS is empty now that `retrieve` has landed; the unknown-tool path is what
-    // still guards a manifest from declaring behaviour the core would silently not provide.
     const path = writeManifest(
       [
         'id: probe',
@@ -95,7 +101,7 @@ describe('mode manifest validation', () => {
     await expect(loadModeFile(path)).rejects.toThrow(/unknown tool 'derive'/);
   });
 
-  it('rejects a capabilities block, which nothing enforces until step 8', async () => {
+  it('accepts a capabilities block now that step 8 enforces it', async () => {
     const path = writeManifest(
       [
         'id: probe',
@@ -107,9 +113,80 @@ describe('mode manifest validation', () => {
         'tools: [footnote]',
         'capabilities:',
         '  execute: false',
+        '  model_call: { budget_usd_session: 2.00 }',
       ].join('\n'),
     );
-    await expect(loadModeFile(path)).rejects.toThrow(/'capabilities' is not enforced yet/);
+    const mode = await loadModeFile(path);
+    expect(mode.capabilities.execute).toBe(false);
+    expect(mode.capabilities.model_call).toEqual({ budget_usd_session: 2.0 });
+  });
+
+  it('defaults to empty capabilities when block is omitted', async () => {
+    const path = writeManifest(
+      [
+        'id: probe',
+        'label: Probe',
+        'prompt_fragment: prompts/modes/tutor.md',
+        'scope:',
+        "  read: ['**']",
+        "  write: ['sessions/**']",
+        'tools: [footnote]',
+      ].join('\n'),
+    );
+    const mode = await loadModeFile(path);
+    expect(mode.capabilities).toEqual({});
+  });
+
+  it('rejects execute + web_fetch co-grant (§6.4)', async () => {
+    const path = writeManifest(
+      [
+        'id: probe',
+        'label: Probe',
+        'prompt_fragment: prompts/modes/tutor.md',
+        'scope:',
+        "  read: ['**']",
+        "  write: ['sessions/**']",
+        'tools: [footnote]',
+        'capabilities:',
+        '  execute: { cwd: /tmp, network: false }',
+        '  web_fetch: { read_only: true }',
+      ].join('\n'),
+    );
+    await expect(loadModeFile(path)).rejects.toThrow(/execute and web_fetch must not both/);
+  });
+
+  it('rejects web_fetch without read_only (§6.4)', async () => {
+    const path = writeManifest(
+      [
+        'id: probe',
+        'label: Probe',
+        'prompt_fragment: prompts/modes/tutor.md',
+        'scope:',
+        "  read: ['**']",
+        "  write: ['sessions/**']",
+        'tools: [footnote]',
+        'capabilities:',
+        '  web_fetch: { read_only: false }',
+      ].join('\n'),
+    );
+    await expect(loadModeFile(path)).rejects.toThrow(/web_fetch must be read_only/);
+  });
+
+  it('rejects an unknown capability key', async () => {
+    const path = writeManifest(
+      [
+        'id: probe',
+        'label: Probe',
+        'prompt_fragment: prompts/modes/tutor.md',
+        'scope:',
+        "  read: ['**']",
+        "  write: ['sessions/**']",
+        'tools: [footnote]',
+        'capabilities:',
+        '  teleport: true',
+      ].join('\n'),
+    );
+    await expect(loadModeFile(path)).rejects.toThrow(ConfigInvalid);
   });
 
   it('rejects an unknown key instead of silently dropping it', async () => {
