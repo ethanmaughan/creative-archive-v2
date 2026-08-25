@@ -57,6 +57,21 @@ export const RequestSchema = z.discriminatedUnion('type', [
     mode: z.string().min(1).optional(),
     after: z.string().min(1).optional(),
   }),
+  z.object({
+    type: z.literal('executor.file_write'),
+    path: z.string().min(1),
+    content: z.string(),
+  }),
+  z.object({
+    type: z.literal('executor.shell'),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    timeout: z.number().positive().optional(),
+  }),
+  z.object({
+    type: z.literal('executor.web_fetch'),
+    url: z.string().min(1),
+  }),
   z.object({ type: z.literal('index.status') }),
   z.object({ type: z.literal('index.rebuild') }),
   z.object({ type: z.literal('session.end') }),
