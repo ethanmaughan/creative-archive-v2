@@ -305,6 +305,64 @@ async function handleCommand(command: string, argument: string): Promise<boolean
     case 'reindex':
       return printResult(await call({ type: 'index.rebuild' }));
 
+    case 'write': {
+      const parts = argument.split(' ');
+      const path = parts[0];
+      const content = parts.slice(1).join(' ');
+      if (!path || content.length === 0) {
+        console.log('  /write <path> <content>');
+        return false;
+      }
+      const result = await call<{ outcome: string; output?: string; error?: string }>({
+        type: 'executor.file_write',
+        path,
+        content,
+      });
+      if (result !== null) {
+        if (result.outcome === 'ok') console.log(`  wrote ${result.output}`);
+        else console.log(`  ${result.outcome}: ${result.error}`);
+      }
+      return false;
+    }
+
+    case 'run': {
+      if (argument.length === 0) {
+        console.log('  /run <command>');
+        return false;
+      }
+      const result = await call<{
+        outcome: string;
+        output?: string;
+        error?: string;
+        exitCode?: number | null;
+      }>({ type: 'executor.shell', command: argument });
+      if (result !== null) {
+        if (result.output) console.log(result.output);
+        if (result.error) console.error(result.error);
+        console.log(`  exit ${result.exitCode ?? 'unknown'} (${result.outcome})`);
+      }
+      return false;
+    }
+
+    case 'fetch': {
+      if (argument.length === 0) {
+        console.log('  /fetch <url>');
+        return false;
+      }
+      const result = await call<{ outcome: string; output?: string; error?: string }>({
+        type: 'executor.web_fetch',
+        url: argument,
+      });
+      if (result !== null) {
+        if (result.outcome === 'ok') {
+          console.log(`  [untrusted content]\n${result.output?.slice(0, 2000)}`);
+        } else {
+          console.log(`  ${result.outcome}: ${result.error}`);
+        }
+      }
+      return false;
+    }
+
     case 'end': {
       const request = await call<{ token: string; question: string }>({ type: 'session.end' });
       if (request === null) return false;

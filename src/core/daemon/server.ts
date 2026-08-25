@@ -3,6 +3,7 @@ import { mkdirSync, unlinkSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { openArchive, type Archive } from '../archive/archive.ts';
 import { backfillDerivation } from '../derive/backfill.ts';
+import { runTask } from '../executor/executor.ts';
 import { deriveSession } from '../derive/derive.ts';
 import { ingestFile } from '../ingest/ingest.ts';
 import { socketPath } from '../config/paths.ts';
@@ -432,6 +433,59 @@ export class DaemonServer {
         return result;
       }
 
+      case 'executor.file_write': {
+        const archive = this.#requireArchive(connection);
+        const session = this.#requireSession(connection);
+        const mode = this.#requireMode(connection);
+        if (session.id === null) {
+          throw new SessionStateError('session is still buffering — complete intake first');
+        }
+        return runTask(
+          { type: 'file_write', path: request.path, content: request.content },
+          mode.capabilities,
+          archive.store,
+          session.id,
+          archive.root,
+        );
+      }
+
+      case 'executor.shell': {
+        const archive = this.#requireArchive(connection);
+        const session = this.#requireSession(connection);
+        const mode = this.#requireMode(connection);
+        if (session.id === null) {
+          throw new SessionStateError('session is still buffering — complete intake first');
+        }
+        return runTask(
+          {
+            type: 'shell',
+            command: request.command,
+            ...(request.args !== undefined ? { args: request.args } : {}),
+            ...(request.timeout !== undefined ? { timeout: request.timeout } : {}),
+          },
+          mode.capabilities,
+          archive.store,
+          session.id,
+          archive.root,
+        );
+      }
+
+      case 'executor.web_fetch': {
+        const archive = this.#requireArchive(connection);
+        const session = this.#requireSession(connection);
+        const mode = this.#requireMode(connection);
+        if (session.id === null) {
+          throw new SessionStateError('session is still buffering — complete intake first');
+        }
+        return runTask(
+          { type: 'web_fetch', url: request.url },
+          mode.capabilities,
+          archive.store,
+          session.id,
+          archive.root,
+        );
+      }
+
       case 'index.status': {
         const archive = this.#requireArchive(connection);
         const index = this.#indexes.peek(archive.root);
@@ -594,6 +648,14 @@ export class DaemonServer {
       throw new SessionStateError('no session is open');
     }
     return connection.session;
+  }
+
+  #requireMode(connection: Connection): Mode {
+    const mode = connection.session?.mode ?? connection.mode;
+    if (mode === null || mode === undefined) {
+      throw new CoreError('no_mode', 'no mode is set — begin a session with a mode first');
+    }
+    return mode;
   }
 }
 
